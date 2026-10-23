@@ -181,37 +181,46 @@ pub fn get_tar_details(
 }
 
 pub fn unarchive_tar_file(app_handle: AppHandle, config: ExtractionConfig) -> Result<(), String> {
-    // Open the TAR file with appropriate decompression
+    extract_tar(&config, |files, total, percentage| {
+        let progress_data = serde_json::json!({
+            "files": files,
+            "total": total,
+            "percentage": percentage
+        });
+        let _ = app_handle.emit("extract-progress", progress_data);
+    })
+}
+
+/// Extract a tar / tar.gz / tar.bz2 archive, calling `on_progress(files, total,
+/// percentage)` after each unpacked entry. Kept free of Tauri types so it can
+/// be unit-tested.
+fn extract_tar<F>(config: &ExtractionConfig, mut on_progress: F) -> Result<(), String>
+where
+    F: FnMut(usize, usize, f64),
+{
     let source_path = PathBuf::from(&config.source);
-    let reader = open_tar_archive(&source_path)?;
-    let mut archive = Archive::new(BufReader::new(reader));
+    let selected_files = config.selected_files.clone().unwrap_or_default();
+    let is_selected = |path_str: &str| {
+        selected_files.is_empty()
+            || selected_files
+                .iter()
+                .any(|selected| path_str.starts_with(selected.as_str()))
+    };
 
-    // Collect all entries first to count total files to extract
-    let entries: Vec<_> = archive
-        .entries()
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-
-    let selected_files = config.selected_files.unwrap_or_default();
-
-    // Count how many files will be extracted
-    let total_files = if !selected_files.is_empty() {
-        entries
-            .iter()
-            .filter(|entry| {
-                if let Ok(path) = entry.path() {
-                    let path_str = path.to_string_lossy().to_string();
-                    selected_files
-                        .iter()
-                        .any(|selected| path_str.starts_with(selected))
-                } else {
-                    false
-                }
-            })
-            .count()
-    } else {
-        entries.len()
+    // Pass 1: count entries for progress. Entries share one sequential stream,
+    // so they must never be collected and unpacked later (their data would
+    // already have been consumed); counting needs its own reader.
+    let total_files = {
+        let mut archive = Archive::new(BufReader::new(open_tar_archive(&source_path)?));
+        let mut count = 0;
+        for entry in archive.entries().map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path().map_err(|e| e.to_string())?;
+            if is_selected(&path.to_string_lossy()) {
+                count += 1;
+            }
+        }
+        count
     };
 
     let progress = ExtractionProgress::new(total_files);
@@ -220,54 +229,42 @@ pub fn unarchive_tar_file(app_handle: AppHandle, config: ExtractionConfig) -> Re
     std::fs::create_dir_all(&config.destination)
         .map_err(|e| format!("Failed to create extraction directory: {}", e))?;
 
-    // Extract files with progress tracking and cancellation support
+    // Pass 2: stream and unpack each entry while the reader is positioned on it.
+    let mut archive = Archive::new(BufReader::new(open_tar_archive(&source_path)?));
     let mut file_count = 0;
-    for entry_result in entries {
+    for entry_result in archive.entries().map_err(|e| e.to_string())? {
         // Check for cancellation
         if config.cancel.load(Ordering::Relaxed) {
             break;
         }
 
-        let mut entry = entry_result;
+        let mut entry = entry_result.map_err(|e| e.to_string())?;
 
-        let path = entry.path().map_err(|e| e.to_string())?;
-        let path_str = path.to_string_lossy().to_string();
+        let path_str = entry
+            .path()
+            .map_err(|e| e.to_string())?
+            .to_string_lossy()
+            .to_string();
 
         // Check if the file path is in the selected files
-        if !selected_files.is_empty() {
-            if !selected_files
-                .iter()
-                .any(|selected| path_str.starts_with(selected))
-            {
-                println!("Skipping file: {}", path_str);
-                continue;
-            }
+        if !is_selected(&path_str) {
+            println!("Skipping file: {}", path_str);
+            continue;
         }
 
-        let outpath = Path::new(&config.destination).join(&path);
-
-        // Create parent directories if necessary
-        if let Some(p) = outpath.parent() {
-            std::fs::create_dir_all(p).map_err(|e| format!("Failed to create directory: {}", e))?;
-        }
-
-        // Write file contents
-        entry
-            .unpack(&outpath)
+        // Write file contents; unpack_in sanitises the path and creates parent dirs
+        let unpacked = entry
+            .unpack_in(&config.destination)
             .map_err(|e| format!("Failed to unpack file {}: {}", path_str, e))?;
+        if !unpacked {
+            eprintln!("Skipping unsafe TAR entry: {}", path_str);
+            continue;
+        }
 
-        // Update and emit progress
+        // Update and report progress
         file_count += 1;
         progress.update(file_count);
-
-        // Emit progress as JSON object with file count and percentage
-        let progress_value = progress.get();
-        let progress_data = serde_json::json!({
-            "files": file_count,
-            "total": total_files,
-            "percentage": progress_value
-        });
-        let _ = app_handle.emit("extract-progress", progress_data);
+        on_progress(file_count, total_files, progress.get());
     }
 
     Ok(())
@@ -759,4 +756,85 @@ pub fn create_tar_bz2_archive(
     let _ = app_handle.emit("compress-complete", ());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+    use tempfile::TempDir;
+
+    /// Build a tar with files larger than the 8 KiB read buffer, the case that
+    /// broke when entries were collected before unpacking.
+    fn write_tar(path: &Path, files: &[(&str, Vec<u8>)]) {
+        let mut builder = Builder::new(File::create(path).unwrap());
+        for (name, data) in files {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o600);
+            header.set_cksum();
+            builder.append_data(&mut header, name, data.as_slice()).unwrap();
+        }
+        builder.finish().unwrap();
+    }
+
+    fn config(source: &Path, dest: &Path, selected: Option<Vec<String>>) -> ExtractionConfig {
+        ExtractionConfig {
+            source: source.to_string_lossy().to_string(),
+            destination: dest.to_string_lossy().to_string(),
+            selected_files: selected,
+            cancel: Arc::new(AtomicBool::new(false)),
+            password: None,
+        }
+    }
+
+    fn sample_files() -> Vec<(&'static str, Vec<u8>)> {
+        vec![
+            ("big.bin", (0..10_138u32).map(|i| (i % 251) as u8).collect()),
+            ("dir/second.txt", vec![b'x'; 20_000]),
+            ("small.txt", b"hello".to_vec()),
+        ]
+    }
+
+    #[test]
+    fn extract_tar_writes_full_contents_of_large_entries() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("in.tar");
+        let files = sample_files();
+        write_tar(&src, &files);
+        let out = tmp.path().join("out");
+
+        let mut last = (0, 0, 0.0);
+        extract_tar(&config(&src, &out, None), |f, t, p| last = (f, t, p)).unwrap();
+
+        for (name, data) in &files {
+            assert_eq!(&std::fs::read(out.join(name)).unwrap(), data, "{name}");
+        }
+        assert_eq!(last, (3, 3, 100.0));
+    }
+
+    #[test]
+    fn extract_tar_gz_and_selected_files() {
+        let tmp = TempDir::new().unwrap();
+        let raw = tmp.path().join("in.tar");
+        let files = sample_files();
+        write_tar(&raw, &files);
+        let gz = tmp.path().join("in.tar.gz");
+        let mut enc = GzEncoder::new(File::create(&gz).unwrap(), flate2::Compression::default());
+        io::copy(&mut File::open(&raw).unwrap(), &mut enc).unwrap();
+        enc.finish().unwrap();
+        let out = tmp.path().join("out");
+
+        let mut count = 0;
+        extract_tar(
+            &config(&gz, &out, Some(vec!["dir/".to_string()])),
+            |f, t, _| count = f.max(t),
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read(out.join("dir/second.txt")).unwrap(), files[1].1);
+        assert!(!out.join("big.bin").exists());
+        assert!(!out.join("small.txt").exists());
+        assert_eq!(count, 1);
+    }
 }

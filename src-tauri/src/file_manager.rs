@@ -58,7 +58,7 @@ pub fn open_file(path: String, file_path: Option<String>, state: State<'_, Arc<A
 
     match path.extension().and_then(|ext| ext.to_str()) {
         Some("zip") => {
-            get_zip_details(path, file_path, state).map(|details| Ok(Some(details))).unwrap_or_else(Err)
+            get_zip_details(path, file_path, None, state).map(|details| Ok(Some(details))).unwrap_or_else(Err)
         },
         Some("tar") => {
             get_tar_details(path, file_path, state).map(|details| Ok(Some(details))).unwrap_or_else(Err)

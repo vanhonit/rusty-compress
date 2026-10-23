@@ -31,6 +31,7 @@ export const TabProvider = ({ children }) => {
       currentPath: tabData.currentPath || '',
       currentArchive: tabData.currentArchive || '',
       archivePath: tabData.archivePath || '',
+      archivePassword: tabData.archivePassword || null,
       files: tabData.files || [],
       selectedFiles: tabData.selectedFiles || [],
       searchQuery: tabData.searchQuery || '',

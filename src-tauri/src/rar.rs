@@ -8,10 +8,125 @@ use tauri::{AppHandle, Emitter, State};
 use unrar::Archive;
 
 use crate::data_type::{AppTempDir, ExtractionConfig, ExtractionProgress, FileInfo};
+use crate::utils::{safe_join, INVALID_PASSWORD_PREFIX, PASSWORD_REQUIRED_PREFIX};
+
+fn is_password_error(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("password") || lower.contains("encrypted")
+}
+
+fn wrap_password_error(e: &str, has_password: bool) -> String {
+    if !has_password && is_password_error(e) {
+        format!("{}{}", crate::utils::PASSWORD_REQUIRED_PREFIX, e)
+    } else {
+        e.to_string()
+    }
+}
+
+/// Map an unrar error code to a password-related error string, if it is one.
+fn password_code_error(code: unrar::error::Code, msg: &str) -> Option<String> {
+    use unrar::error::Code;
+    match code {
+        Code::MissingPassword => Some(format!("{}{}", PASSWORD_REQUIRED_PREFIX, msg)),
+        Code::BadPassword => Some(format!("{}{}", INVALID_PASSWORD_PREFIX, msg)),
+        _ => None,
+    }
+}
+
+/// Verify that `password` (if any) unlocks the RAR archive before extraction starts.
+/// Picks the smallest encrypted file entry and test-decodes it, so the check is cheap.
+pub fn check_rar_password(source: &str, password: Option<&str>) -> Result<(), String> {
+    use unrar::error::Code;
+
+    // Pass 1: list headers and pick the smallest encrypted, non-directory entry.
+    let listing = match password {
+        Some(pw) => Archive::with_password(source, pw),
+        None => Archive::new(source),
+    }
+    .open_for_listing()
+    .map_err(|e| {
+        password_code_error(e.code, &format!("Failed to open RAR archive: {}", e))
+            .unwrap_or_else(|| format!("Failed to open RAR archive: {}", e))
+    })?;
+
+    let mut target: Option<(u64, String)> = None;
+    for entry in listing {
+        let header = entry.map_err(|e| {
+            password_code_error(e.code, &format!("Failed to read RAR entry: {}", e))
+                .unwrap_or_else(|| format!("Failed to read RAR entry: {}", e))
+        })?;
+        if header.is_encrypted() && !header.is_directory() {
+            let size = header.unpacked_size;
+            let is_smaller = target.as_ref().is_none_or(|(best, _)| size < *best);
+            if is_smaller {
+                let name = header.filename.to_string_lossy().to_string();
+                target = Some((size, name));
+            }
+        }
+    }
+
+    let target_name = match target {
+        Some((_, name)) => name,
+        None => return Ok(()),
+    };
+
+    let pw = match password {
+        Some(pw) => pw,
+        None => {
+            return Err(format!(
+                "{}Archive is password protected",
+                PASSWORD_REQUIRED_PREFIX
+            ))
+        }
+    };
+
+    // Pass 2: decode the chosen entry to confirm the password.
+    let mut archive = Archive::with_password(source, pw)
+        .open_for_processing()
+        .map_err(|e| {
+            password_code_error(e.code, &format!("Failed to open RAR archive: {}", e))
+                .unwrap_or_else(|| format!("Failed to open RAR archive: {}", e))
+        })?;
+
+    loop {
+        let header = archive.read_header().map_err(|e| {
+            password_code_error(e.code, &format!("Failed to read RAR header: {}", e))
+                .unwrap_or_else(|| format!("Failed to read RAR header: {}", e))
+        })?;
+
+        match header {
+            Some(at_file) => {
+                let name = at_file.entry().filename.to_string_lossy().to_string();
+                if name == target_name {
+                    return match at_file.test() {
+                        Ok(_) => Ok(()),
+                        Err(e) => {
+                            // RAR4 wrong passwords surface as CRC/bad-data errors during test.
+                            let code = match e.code {
+                                Code::BadData => Code::BadPassword,
+                                other => other,
+                            };
+                            Err(password_code_error(
+                                code,
+                                &format!("Failed to verify RAR password: {}", e),
+                            )
+                            .unwrap_or_else(|| format!("Failed to verify RAR password: {}", e)))
+                        }
+                    };
+                }
+                archive = at_file
+                    .skip()
+                    .map_err(|e| format!("Failed to skip to next entry: {}", e))?;
+            }
+            None => return Err("Encrypted RAR entry not found during verification".to_string()),
+        }
+    }
+}
 
 pub fn get_rar_details(
     source_path: PathBuf,
     file_path: Option<String>,
+    password: Option<String>,
     _state: State<'_, Arc<AppTempDir>>,
 ) -> Result<Vec<FileInfo>, String> {
     let file_path = file_path.unwrap_or_default();
@@ -28,10 +143,17 @@ pub fn get_rar_details(
         .to_str()
         .ok_or("Invalid source path")?
         .to_string();
+    let has_password = password.is_some();
 
-    let archive = Archive::new(&source_str)
-        .open_for_listing()
-        .map_err(|e| format!("Failed to open RAR archive: {}", e))?;
+    let archive = match &password {
+        Some(pwd) => unrar::Archive::with_password(&source_str, pwd),
+        None => Archive::new(&source_str),
+    }
+    .open_for_listing()
+    .map_err(|e| {
+        let msg = e.to_string();
+        wrap_password_error(&format!("Failed to open RAR archive: {}", msg), has_password)
+    })?;
 
     let mut file_details: Vec<FileInfo> = Vec::new();
     let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -224,7 +346,16 @@ pub fn unarchive_rar_file(app_handle: AppHandle, config: ExtractionConfig) -> Re
                 };
 
                 if should_extract {
-                    let file_path = dest_path.join(&file_path_str);
+                    let file_path = match safe_join(&dest_path, &file_path_str) {
+                        Some(path) => path,
+                        None => {
+                            eprintln!("Skipping unsafe RAR entry: {}", file_path_str);
+                            archive = archive_at_file
+                                .skip()
+                                .map_err(|e| format!("Failed to skip to next entry: {}", e))?;
+                            continue;
+                        }
+                    };
 
                     if entry_header.is_directory() {
                         std::fs::create_dir_all(&file_path)
@@ -268,6 +399,7 @@ pub fn unarchive_rar_file(app_handle: AppHandle, config: ExtractionConfig) -> Re
 pub fn view_file_in_rar(
     source: String,
     file_name: String,
+    password: Option<String>,
     state: State<'_, Arc<AppTempDir>>,
 ) -> Result<String, String> {
     if file_name.contains("..") {
@@ -279,9 +411,12 @@ pub fn view_file_in_rar(
         return Err("Empty file name provided".to_string());
     }
 
-    let mut archive = Archive::new(&source)
-        .open_for_processing()
-        .map_err(|e| format!("Failed to open RAR archive: {}", e))?;
+    let mut archive = match &password {
+        Some(pwd) => unrar::Archive::with_password(&source, pwd),
+        None => Archive::new(&source),
+    }
+    .open_for_processing()
+    .map_err(|e| format!("Failed to open RAR archive: {}", e))?;
 
     let mut file_data: Option<Vec<u8>> = None;
 
@@ -346,6 +481,7 @@ pub fn view_file_in_rar(
 pub fn get_image_preview_from_rar(
     archive_path: String,
     file_path: String,
+    password: Option<String>,
 ) -> Result<String, String> {
     if file_path.contains("..") {
         return Err("Invalid file path (path traversal detected)".to_string());
@@ -360,9 +496,12 @@ pub fn get_image_preview_from_rar(
         return Err("File is not a supported image format. Supported formats: jpg, jpeg, png, gif, webp, bmp, tiff, tif".to_string());
     }
 
-    let mut archive = Archive::new(&archive_path)
-        .open_for_processing()
-        .map_err(|e| format!("Failed to open RAR archive: {}", e))?;
+    let mut archive = match &password {
+        Some(pwd) => unrar::Archive::with_password(&archive_path, pwd),
+        None => Archive::new(&archive_path),
+    }
+    .open_for_processing()
+    .map_err(|e| format!("Failed to open RAR archive: {}", e))?;
 
     let mut file_data: Option<Vec<u8>> = None;
 
@@ -453,4 +592,29 @@ fn base64_encode(data: &[u8]) -> String {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::{INVALID_PASSWORD_PREFIX, PASSWORD_REQUIRED_PREFIX};
+
+    const CRYPTED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/crypted.rar");
+
+    #[test]
+    fn check_rar_password_requires_password_for_encrypted_archive() {
+        let err = check_rar_password(CRYPTED, None).unwrap_err();
+        assert!(err.starts_with(PASSWORD_REQUIRED_PREFIX), "got: {err}");
+    }
+
+    #[test]
+    fn check_rar_password_rejects_wrong_password() {
+        let err = check_rar_password(CRYPTED, Some("wrong")).unwrap_err();
+        assert!(err.starts_with(INVALID_PASSWORD_PREFIX), "got: {err}");
+    }
+
+    #[test]
+    fn check_rar_password_accepts_correct_password() {
+        assert_eq!(check_rar_password(CRYPTED, Some("unrar")), Ok(()));
+    }
 }

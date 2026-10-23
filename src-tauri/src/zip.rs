@@ -1,6 +1,6 @@
 use open::that_detached;
 use serde_json;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
@@ -11,14 +11,70 @@ use tauri::State;
 use zip::ZipArchive;
 
 use crate::data_type::{AppTempDir, ExtractionConfig, ExtractionProgress, FileInfo};
+use crate::utils::{INVALID_PASSWORD_PREFIX, PASSWORD_REQUIRED_PREFIX};
 use rand::Rng;
+
+/// Verify that `password` (if any) unlocks the archive before extraction starts.
+/// Returns Ok when the archive has no encrypted entries or the password is correct.
+pub fn check_zip_password(source: &str, password: Option<&str>) -> Result<(), String> {
+    let file = File::open(source).map_err(|e| e.to_string())?;
+    let mut archive = ZipArchive::new(BufReader::new(file)).map_err(|e| e.to_string())?;
+
+    let mut encrypted_index = None;
+    for i in 0..archive.len() {
+        let entry = archive.by_index_raw(i).map_err(|e| e.to_string())?;
+        if entry.encrypted() && !entry.is_dir() {
+            encrypted_index = Some(i);
+            break;
+        }
+    }
+
+    let index = match encrypted_index {
+        Some(i) => i,
+        None => return Ok(()),
+    };
+
+    let password = match password {
+        Some(pw) => pw,
+        None => {
+            return Err(format!(
+                "{}Archive is password protected",
+                PASSWORD_REQUIRED_PREFIX
+            ))
+        }
+    };
+
+    let result = match archive.by_index_decrypt(index, password.as_bytes()) {
+        Ok(_) => Ok(()),
+        Err(zip::result::ZipError::InvalidPassword) => {
+            Err(format!("{}Incorrect password", INVALID_PASSWORD_PREFIX))
+        }
+        Err(e) => Err(e.to_string()),
+    };
+    result
+}
+
+fn is_password_error(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("password") || lower.contains("encrypted") || lower.contains("decrypt")
+}
+
+fn wrap_password_error(e: &str, has_password: bool) -> String {
+    if !has_password && is_password_error(e) {
+        format!("{}{}", crate::utils::PASSWORD_REQUIRED_PREFIX, e)
+    } else {
+        e.to_string()
+    }
+}
 
 pub fn get_zip_details(
     source_path: PathBuf,
     file_path: Option<String>,
+    password: Option<String>,
     _state: State<'_, Arc<AppTempDir>>,
 ) -> Result<Vec<FileInfo>, String> {
     let file_path = file_path.unwrap_or_default();
+    let has_password = password.is_some();
 
     // Normalize current_dir to always end with '/' if non-empty
     let current_dir = if file_path.is_empty() {
@@ -34,18 +90,24 @@ pub fn get_zip_details(
     let reader = BufReader::new(file);
     let mut archive = ZipArchive::new(reader).map_err(|e| e.to_string())?;
 
-    // First pass: collect all entry names
-    let mut all_names: Vec<String> = Vec::new();
+    // First pass: collect all entry names and build name-to-index map
+    let mut name_to_index: HashMap<String, usize> = HashMap::new();
     for i in 0..archive.len() {
-        let entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        all_names.push(entry.name().to_string());
+        let password_bytes = password.as_ref().map(|p| p.as_bytes());
+        let entry = archive.by_index_decrypt(i, password_bytes.as_deref().unwrap_or(&[]))
+            .map_err(|e| {
+                let msg = e.to_string();
+                wrap_password_error(&msg, has_password)
+            })?;
+        let name = entry.name().to_string();
+        name_to_index.insert(name.clone(), i);
     }
 
     // Build a deduplicated set of immediate children of current_dir
     let mut seen: HashSet<String> = HashSet::new();
     let mut child_paths: Vec<String> = Vec::new();
 
-    for name in &all_names {
+    for name in name_to_index.keys() {
         // Skip if this entry IS the current directory itself
         if name == &current_dir {
             continue;
@@ -90,21 +152,26 @@ pub fn get_zip_details(
             .unwrap_or(child_path.as_str())
             .to_string();
 
-        let (size, last_modified) = match archive.by_name(child_path.as_str()) {
-            Ok(entry) => {
-                let size = entry.size();
-                let last_modified = entry
-                    .last_modified()
-                    .map(|dt| {
-                        chrono::NaiveDateTime::try_from(dt)
-                            .map(|ndt| ndt.format("%Y-%m-%d %H:%M:%S").to_string())
-                            .unwrap_or_else(|_| "N/A".to_string())
-                    })
-                    .unwrap_or_else(|| "N/A".to_string());
-                (size, last_modified)
+        let (size, last_modified) = match name_to_index.get(child_path.as_str()) {
+            Some(&idx) => {
+                let password_bytes = password.as_ref().map(|p| p.as_bytes());
+                match archive.by_index_decrypt(idx, password_bytes.as_deref().unwrap_or(&[])) {
+                    Ok(entry) => {
+                        let size = entry.size();
+                        let last_modified = entry
+                            .last_modified()
+                            .map(|dt| {
+                                chrono::NaiveDateTime::try_from(dt)
+                                    .map(|ndt| ndt.format("%Y-%m-%d %H:%M:%S").to_string())
+                                    .unwrap_or_else(|_| "N/A".to_string())
+                            })
+                            .unwrap_or_else(|| "N/A".to_string());
+                        (size, last_modified)
+                    }
+                    Err(_) => (0, "N/A".to_string()),
+                }
             }
-            // No explicit record for this entry (e.g. an inferred directory)
-            Err(_) => (0, "N/A".to_string()),
+            None => (0, "N/A".to_string()),
         };
 
         let mimetype = if is_dir {
@@ -186,7 +253,13 @@ pub fn unarchive_zip_file(
 
         // Check if the file path is in the selected files
         if !selected_files.is_empty() {
-            let file_path = file.enclosed_name().unwrap().to_string_lossy().to_string();
+            let file_path = match file.enclosed_name() {
+                Some(path) => path.to_string_lossy().to_string(),
+                None => {
+                    eprintln!("Skipping unsafe entry {}", i);
+                    continue;
+                }
+            };
             if !selected_files
                 .iter()
                 .any(|selected| file_path.starts_with(selected))
@@ -254,6 +327,7 @@ pub fn unarchive_zip_file(
 pub fn view_file_in_zip(
     source: String,
     file_name: String,
+    password: Option<String>,
     state: State<'_, Arc<AppTempDir>>,
 ) -> Result<String, String> {
     if file_name.contains("..") {
@@ -271,17 +345,20 @@ pub fn view_file_in_zip(
     let mut archive =
         ZipArchive::new(reader).map_err(|e| format!("Failed to read archive: {}", e))?;
 
-    // Try to find the file
-    let mut file_in_zip = match archive.by_name(file_name_clean) {
-        Ok(file) => {
-            eprintln!("[DEBUG] File found successfully: {}", file.name());
-            file
-        }
-        Err(e) => {
-            eprintln!("[ERROR] File not found: {}", e);
-            return Err(format!("File not found in archive: {}", e));
-        }
-    };
+    // Find entry index by name
+    let password_bytes = password.as_ref().map(|p| p.as_bytes());
+    let target_index = (0..archive.len())
+        .find(|&i| {
+            archive
+                .by_index_decrypt(i, password_bytes.as_deref().unwrap_or(&[]))
+                .map(|e| e.name() == file_name_clean)
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| format!("File not found in archive: {}", file_name_clean))?;
+
+    let mut file_in_zip = archive
+        .by_index_decrypt(target_index, password_bytes.as_deref().unwrap_or(&[]))
+        .map_err(|e| format!("Failed to read file from archive: {}", e))?;
 
     // Create a temporary file
     let temp_dir = &state.temp_dir;
@@ -327,6 +404,7 @@ pub fn view_file_in_zip(
 pub fn get_image_preview_from_zip(
     archive_path: String,
     file_path: String,
+    password: Option<String>,
 ) -> Result<String, String> {
     // Validate file path to prevent directory traversal attacks
     if file_path.contains("..") {
@@ -349,9 +427,20 @@ pub fn get_image_preview_from_zip(
     let mut archive =
         ZipArchive::new(reader).map_err(|e| format!("Failed to read archive: {}", e))?;
 
+    // Find entry index by name
+    let password_bytes = password.as_ref().map(|p| p.as_bytes());
+    let target_index = (0..archive.len())
+        .find(|&i| {
+            archive
+                .by_index_decrypt(i, password_bytes.as_deref().unwrap_or(&[]))
+                .map(|e| e.name() == file_path_clean)
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| format!("File not found in archive: {}", file_path_clean))?;
+
     // Get the file from the archive
     let mut file_in_zip = archive
-        .by_name(file_path_clean)
+        .by_index_decrypt(target_index, password_bytes.as_deref().unwrap_or(&[]))
         .map_err(|e| format!("File not found in archive: {}", e))?;
 
     // Read the file contents into a vector
@@ -556,4 +645,63 @@ pub fn create_zip_archive(
     let _ = app_handle.emit("compress-complete", ());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::{INVALID_PASSWORD_PREFIX, PASSWORD_REQUIRED_PREFIX};
+    use std::io::Write;
+    use tempfile::TempDir;
+    use zip::write::SimpleFileOptions;
+
+    fn write_zip(path: &Path, encrypted: bool) {
+        let file = File::create(path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options = if encrypted {
+            SimpleFileOptions::default().with_aes_encryption(zip::AesMode::Aes256, "secret")
+        } else {
+            SimpleFileOptions::default()
+        };
+        writer.start_file("hello.txt", options).unwrap();
+        writer.write_all(b"hello world").unwrap();
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn check_zip_password_ok_for_unencrypted_archive() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("plain.zip");
+        write_zip(&path, false);
+        assert_eq!(check_zip_password(path.to_str().unwrap(), None), Ok(()));
+    }
+
+    #[test]
+    fn check_zip_password_requires_password_for_encrypted_archive() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("enc.zip");
+        write_zip(&path, true);
+        let err = check_zip_password(path.to_str().unwrap(), None).unwrap_err();
+        assert!(err.starts_with(PASSWORD_REQUIRED_PREFIX), "got: {err}");
+    }
+
+    #[test]
+    fn check_zip_password_rejects_wrong_password() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("enc.zip");
+        write_zip(&path, true);
+        let err = check_zip_password(path.to_str().unwrap(), Some("wrong")).unwrap_err();
+        assert!(err.starts_with(INVALID_PASSWORD_PREFIX), "got: {err}");
+    }
+
+    #[test]
+    fn check_zip_password_accepts_correct_password() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("enc.zip");
+        write_zip(&path, true);
+        assert_eq!(
+            check_zip_password(path.to_str().unwrap(), Some("secret")),
+            Ok(())
+        );
+    }
 }

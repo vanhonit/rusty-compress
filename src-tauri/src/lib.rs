@@ -1,7 +1,9 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
+mod compressed;
 mod data_type;
 mod file_manager;
+mod finder;
 mod rar;
 mod sevenz;
 mod tar;
@@ -12,7 +14,7 @@ use std::sync::Mutex;
 use std::fs;
 use std::io::{BufReader, Read};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 // use zip::ZipArchive;
@@ -32,7 +34,13 @@ use tar::view_file_in_tar;
 use tauri::{AppHandle, Emitter, Listener, Manager, RunEvent, WebviewWindowBuilder};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tempfile::TempDir;
-use utils::{detect_archive_type, is_rar_based, is_tar_based, is_zip_based};
+use compressed::{
+    get_compressed_details, get_image_preview_from_compressed, unarchive_compressed_file,
+    view_file_in_compressed,
+};
+use utils::{
+    detect_archive_type, is_rar_based, is_single_compressed, is_tar_based, is_zip_based,
+};
 use zip::create_zip_archive;
 use zip::get_image_preview_from_zip;
 use zip::view_file_in_zip;
@@ -91,6 +99,7 @@ async fn create_archive(
 fn archive_file_details(
     source_path: String,
     file_path: Option<String>,
+    password: Option<String>,
     state: tauri::State<'_, Arc<AppTempDir>>,
 ) -> Result<Vec<FileInfo>, String> {
     let source = PathBuf::from(source_path.clone());
@@ -100,11 +109,30 @@ fn archive_file_details(
         detect_archive_type(&source_path).ok_or_else(|| "Unsupported archive type".to_string())?;
 
     if is_zip_based(archive_type) {
-        zip::get_zip_details(source, file_path, state).map_err(|e| e.to_string())
+        zip::get_zip_details(source, file_path, password, state).map_err(|e| e.to_string())
     } else if is_tar_based(archive_type) {
         tar::get_tar_details(source, file_path, state).map_err(|e| e.to_string())
+    } else if is_single_compressed(archive_type) {
+        get_compressed_details(source, file_path)
     } else if is_rar_based(archive_type) {
-        get_rar_details(source, file_path, state).map_err(|e| e.to_string())
+        get_rar_details(source, file_path, password, state).map_err(|e| e.to_string())
+    } else {
+        Err("Unsupported archive type".to_string())
+    }
+}
+
+/// Check the password against the archive before any extraction UI is shown.
+/// Returns Err with a PASSWORD_REQUIRED / INVALID_PASSWORD prefix on failure.
+fn verify_extraction_password(archive_path: &str, password: Option<&str>) -> Result<(), String> {
+    let archive_type = detect_archive_type(archive_path)
+        .ok_or_else(|| "Unsupported archive type".to_string())?;
+
+    if is_zip_based(archive_type) {
+        zip::check_zip_password(archive_path, password)
+    } else if is_rar_based(archive_type) {
+        rar::check_rar_password(archive_path, password)
+    } else if is_tar_based(archive_type) || is_single_compressed(archive_type) {
+        Ok(())
     } else {
         Err("Unsupported archive type".to_string())
     }
@@ -118,13 +146,27 @@ async fn extract_files(
     selected_files: Option<Vec<String>>,
     password: Option<String>,
 ) -> Result<(), String> {
-    // Generate a unique label using the current timestamp
+    // Verify the password before opening the progress window
+    {
+        let check_path = archive_path.clone();
+        let check_password = password.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            verify_extraction_password(&check_path, check_password.as_deref())
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+    }
+
+    // Unique window label: timestamp + counter, so jobs started in the same
+    // millisecond (e.g. multi-select "Extract Here" from Finder) never collide.
+    static EXTRACT_SEQ: AtomicU64 = AtomicU64::new(0);
     let label = format!(
-        "extract-{}",
+        "extract-{}-{}",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis()
+            .as_millis(),
+        EXTRACT_SEQ.fetch_add(1, Ordering::Relaxed)
     );
     let webview_url = tauri::WebviewUrl::App(
         format!(
@@ -199,6 +241,15 @@ async fn extract_files(
                             let _ = app_handle.emit("extract-error", e);
                         }
                     }
+                } else if is_single_compressed(archive_type) {
+                    match unarchive_compressed_file(app_handle_clone, config_clone) {
+                        Ok(_) => {
+                            let _ = app_handle.emit("extract-complete", ());
+                        }
+                        Err(e) => {
+                            let _ = app_handle.emit("extract-error", e);
+                        }
+                    }
                 } else if is_rar_based(archive_type) {
                     match unarchive_rar_file(app_handle_clone, config_clone) {
                         Ok(_) => {
@@ -228,6 +279,7 @@ async fn extract_files(
 fn view_file_in_archive(
     archive_path: String,
     file_name: String,
+    password: Option<String>,
     state: tauri::State<'_, Arc<AppTempDir>>,
 ) -> Result<(), String> {
     // Use the archive type detector to identify the archive format
@@ -237,33 +289,37 @@ fn view_file_in_archive(
     };
 
     if is_zip_based(archive_type) {
-        view_file_in_zip(archive_path, file_name, state)?;
+        view_file_in_zip(archive_path, file_name, password, state)?;
     } else if is_tar_based(archive_type) {
         view_file_in_tar(archive_path, file_name, state)?;
+    } else if is_single_compressed(archive_type) {
+        view_file_in_compressed(archive_path, file_name, state)?;
     } else if is_rar_based(archive_type) {
-        view_file_in_rar(archive_path, file_name, state)?;
+        view_file_in_rar(archive_path, file_name, password, state)?;
     }
     Ok(())
 }
 
 #[tauri::command]
-fn get_image_preview(archive_path: String, file_path: String) -> Result<String, String> {
+fn get_image_preview(archive_path: String, file_path: String, password: Option<String>) -> Result<String, String> {
     // Use the archive type detector to identify the archive format
     let archive_type = match detect_archive_type(&archive_path) {
         Some(archive_type) => archive_type,
         None => {
-            return Err("Unsupported archive type. Supported formats: .zip, .jar, .apk, .xapk, .ipa, .tar, .tar.gz, .tgz, .tar.bz2, .tbz2".to_string())
+            return Err("Unsupported archive type. Supported formats: .zip, .jar, .apk, .xapk, .ipa, .tar, .tar.gz, .tgz, .tar.bz2, .tbz2, .gz, .bz2".to_string())
         }
     };
 
     if is_zip_based(archive_type) {
-        get_image_preview_from_zip(archive_path, file_path)
+        get_image_preview_from_zip(archive_path, file_path, password)
     } else if is_tar_based(archive_type) {
         get_image_preview_from_tar(archive_path, file_path)
+    } else if is_single_compressed(archive_type) {
+        get_image_preview_from_compressed(archive_path, file_path)
     } else if is_rar_based(archive_type) {
-        get_image_preview_from_rar(archive_path, file_path)
+        get_image_preview_from_rar(archive_path, file_path, password)
     } else {
-        Err("Unsupported archive type. Supported formats: .zip, .jar, .apk, .xapk, .ipa, .tar, .tar.gz, .tgz, .tar.bz2, .tbz2, .rar".to_string())
+        Err("Unsupported archive type. Supported formats: .zip, .jar, .apk, .xapk, .ipa, .tar, .tar.gz, .tgz, .tar.bz2, .tbz2, .gz, .bz2, .rar".to_string())
     }
 }
 
@@ -411,9 +467,62 @@ struct PendingFiles {
     is_ready: Mutex<bool>,
 }
 // =========================
+// Background launches (Finder / CLI extraction)
+// =========================
+/// True when this launch was started to extract something. Such a launch shows
+/// only the progress windows; the main window stays hidden.
+static BACKGROUND_REQUEST: AtomicBool = AtomicBool::new(false);
+/// Background jobs (folder picker, extractions) that have not finished yet.
+static BACKGROUND_PENDING: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) fn mark_background_request() {
+    BACKGROUND_REQUEST.store(true, Ordering::SeqCst);
+}
+
+pub(crate) fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+pub(crate) fn begin_background_job() {
+    BACKGROUND_PENDING.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Finish a background job, then quit if nothing is left to show.
+pub(crate) fn end_background_job(app: &AppHandle) {
+    BACKGROUND_PENDING.fetch_sub(1, Ordering::SeqCst);
+    exit_if_idle_in_background(app, None);
+}
+
+/// Quit a background-only launch once no job is pending, no progress window is
+/// open, and the main window was never shown. `closing` is the label of a
+/// window that is being destroyed and must not count as open.
+pub(crate) fn exit_if_idle_in_background(app: &AppHandle, closing: Option<&str>) {
+    if !BACKGROUND_REQUEST.load(Ordering::SeqCst) || BACKGROUND_PENDING.load(Ordering::SeqCst) > 0 {
+        return;
+    }
+    let main_hidden = matches!(
+        app.get_webview_window("main").map(|w| w.is_visible()),
+        Some(Ok(false))
+    );
+    let progress_open = app
+        .webview_windows()
+        .keys()
+        .any(|label| label.starts_with("extract-") && Some(label.as_str()) != closing);
+    if main_hidden && !progress_open {
+        app.exit(0);
+    }
+}
+
+// =========================
 // Helper
 // =========================
 fn push_file(app: &tauri::AppHandle, path: String) {
+    // Opening a file always shows the UI, even during a background launch.
+    show_main_window(app);
     let state = app.state::<PendingFiles>();
     let is_ready = *state.is_ready.lock().unwrap();
     if is_ready {
@@ -538,6 +647,9 @@ fn handle_extract(app: &AppHandle, sub: &tauri_plugin_cli::Matches) {
     println!("🗜️ Starting CLI extraction: {} -> {}", archive, dest);
     log::info!("Starting CLI extraction: {} -> {}", archive, dest);
 
+    // Validation passed: from here on only the progress window should appear.
+    mark_background_request();
+    begin_background_job();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         match extract_files(app.clone(), archive.clone(), dest.clone(), None, None).await {
@@ -550,6 +662,7 @@ fn handle_extract(app: &AppHandle, sub: &tauri_plugin_cli::Matches) {
                 log::error!("CLI extraction failed for {}: {}", archive, e);
             }
         }
+        end_background_job(&app);
     });
 }
 // === END: CLI feature ===
@@ -611,6 +724,19 @@ pub fn run() {
             //     files: Mutex::new(vec![]),
             // });
             let handle = app.handle().clone();
+            // Safety net: if the frontend never reports ready, still show the main
+            // window after 5s (unless this launch is a background extraction).
+            let fallback = handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                let hidden = matches!(
+                    fallback.get_webview_window("main").map(|w| w.is_visible()),
+                    Some(Ok(false))
+                );
+                if hidden && !BACKGROUND_REQUEST.load(Ordering::SeqCst) {
+                    show_main_window(&fallback);
+                }
+            });
             // === START: CLI feature ===
             // Handle CLI arguments using tauri_plugin_cli.
             // - app <path>                     → open archive in the UI
@@ -626,6 +752,9 @@ pub fn run() {
                 println!("🔥 Frontend ready");
                 let state = handle.state::<PendingFiles>();
                 *state.is_ready.lock().unwrap() = true;
+                if !BACKGROUND_REQUEST.load(Ordering::SeqCst) {
+                    show_main_window(&handle);
+                }
             });
 
             Ok(())
@@ -648,6 +777,13 @@ pub fn run() {
                     }
                 }
             }
+            // A progress window closed: quit if this was a background-only launch.
+            tauri::WindowEvent::Destroyed => {
+                let label = window.label();
+                if label.starts_with("extract-") {
+                    exit_if_idle_in_background(window.app_handle(), Some(label));
+                }
+            }
             _ => {}
         })
         .plugin(tauri_plugin_dialog::init())
@@ -667,6 +803,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            // Dock click / normal launch while already running: show the main window.
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen { .. } = event {
+                show_main_window(app_handle);
+            }
             // macOS: when the app is already running and the user double-clicks
             // an associated file in Finder, the OS sends an Apple Event rather
             // than spawning a second process, so tauri-plugin-single-instance
@@ -677,6 +818,14 @@ pub fn run() {
                 log::info!("macOS Opened event received with {} URLs", urls.len());
                 for (index, url) in urls.iter().enumerate() {
                     println!("📂 Processing URL {}: {:?}", index, url);
+                    // Finder extension requests (rustycompress://extract?...)
+                    if url.scheme() == finder::URL_SCHEME {
+                        match finder::parse_finder_url(url) {
+                            Some(request) => finder::handle_finder_request(app_handle, request),
+                            None => log::warn!("Ignoring malformed rustycompress URL: {url}"),
+                        }
+                        continue;
+                    }
                     if let Ok(path) = url.to_file_path() {
                         let path_str = path.to_string_lossy().to_string();
                         println!("📂 Emitting file-open event: {}", path_str);

@@ -12,7 +12,9 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Rusty Compress",
+        "visible": false,
         "width": 900,
         "height": 700,
         "minWidth": 800,
@@ -91,6 +93,12 @@
         "name": "Rar Archive",
         "description": "Rar archive file",
         "ext": ["rar"],
+        "role": "Viewer"
+      },
+      {
+        "name": "Compressed File",
+        "description": "Single-file gzip or bzip2 compressed file",
+        "ext": ["gz", "bz2"],
         "role": "Viewer"
       }
     ]
