@@ -96,13 +96,11 @@ Follow our code style and patterns:
 ### 5. Test Your Changes
 
 ```bash
-# Run tests
-npm test
+# Run tests (Rust unit tests; there are no frontend tests)
 cd src-tauri && cargo test
 
 # Run linter
-npm run lint
-cd src-tauri && cargo clippy
+cd src-tauri && cargo clippy --all-targets
 
 # Build project
 npm run build

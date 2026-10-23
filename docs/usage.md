@@ -33,9 +33,9 @@ This guide covers the essential features and workflows of Rusty Compress to help
 
 - **Tab Bar**: Open multiple files/archives in tabs
 - **Breadcrumbs**: Clear path navigation
-- **Toolbar**: Quick access to common actions
-- **File List**: Browse files and folders
-- **Status Bar**: Selection and total item count
+- **Toolbar**: Quick access to common actions (Open, Extract…, Extract Here, Checksum, Archive, Select All, Deselect)
+- **File List**: Browse files and folders. Click a row to select it, and use the checkbox for multiple selection
+- **Search**: Filters the files in the current folder by name
 
 ## Opening Archives
 
@@ -45,89 +45,96 @@ This guide covers the essential features and workflows of Rusty Compress to help
 2. Double-click the file
 3. Rusty Compress automatically opens the archive
 
+On macOS you can also right-click archives in Finder and use **Extract Here with Rusty** or **Rusty Extract To…** to extract without opening the main window. See [Extract from Finder](#extract-from-finder-macos).
+
 ### Method 2: In-App Browser
 
-1. Click the folder icon in the toolbar
-2. Navigate to the folder containing your archive
-3. Click on the archive file to open it
-
-### Method 3: Drag and Drop
-
-1. Drag an archive file from your file manager
-2. Drop it onto the Rusty Compress window
+1. Browse to the folder containing your archive in the main window
+2. Double-click the archive file to open it
 
 ### Supported Archive Formats
 
-**ZIP-based**: `.zip`, `.jar`, `.apk`, `.xapk`, `.ipa`
-**TAR-based**: `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tbz2`
-**RAR-based**: `.rar`
+- **ZIP-based**: `.zip`, `.jar`, `.apk`, `.xapk`, `.ipa`
+- **TAR-based**: `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tbz2`
+- **Single-file compressed**: `.gz`, `.bz2` (shown as one entry named after the file, e.g. `kubeconfig.gz` shows `kubeconfig`)
+- **RAR**: `.rar`
 
+7z archives can be created but not opened (see [Features](features.html)).
+
+### Password-Protected Archives
+
+ZIP (ZipCrypto or AES) and RAR archives can be encrypted:
+
+1. Open the archive. If it is encrypted, a password prompt appears
+2. Enter the password. The app remembers it for the current tab, so browsing, previews, and extraction do not ask again
+3. A wrong password shows "incorrect password" and asks again
+4. Extraction checks the password before the progress window opens
 ## Browsing Archives
 
 ### Navigation Within Archives
 
-- **Up Arrow / Up Button**: Navigate to parent directory
-- **Down Arrow**: Enter selected directory
-- **Back/Forward**: Navigate through browsing history
+- **Double-click a folder**: Open it
+- **Backspace**: Go up one folder
 - **Breadcrumbs**: Click any part of the path to jump
 
 ### File Selection
 
-- **Single Selection**: Click on a file
-- **Multiple Selection**: 
-  - Windows/Linux: `Ctrl + Click`
-  - macOS: `Cmd + Click`
-- **Range Selection**: `Shift + Click` to select consecutive files
-- **Select All**: `Ctrl/Cmd + A`
-
-### Sorting Files
-
-Right-click in the file list to sort by:
-- **Name**: Alphabetical order
-- **Size**: File size (smallest to largest)
-- **Type**: File extension
-- **Date Modified**: Most recent first
+- **Single Selection**: Click a file
+- **Multiple Selection**: Click the checkbox on each file. Use **Select All** and **Deselect** in the toolbar
+- **Clear selection**: `Escape`
 
 ## Extracting Files
 
-### Extract Single Files
+### Extract Selected Files
 
-1. Browse to the archive
-2. Select the files you want to extract
-3. Click the "Extract" button in the toolbar (or press `Ctrl/Cmd + E`)
-4. Choose destination directory
-5. Monitor progress in the extraction window
+1. Browse to the archive and select the files you want
+2. Click **Extract…** in the toolbar
+3. Choose the destination folder
+4. Monitor progress in the extraction window
 
 ### Extract Entire Archive
 
-1. Open the archive
-2. Click "Extract All" in the toolbar (or press `Ctrl/Cmd + Shift + E`)
-3. Choose destination directory
-4. Monitor progress
+1. Open the archive with nothing selected
+2. Click **Extract…** and choose the destination folder. With no selection, everything is extracted
 
-### Extraction Options
+### Extract Here
 
-- **Preserve Structure**: Maintain original directory hierarchy
-- **Overwrite Files**: Choose how to handle existing files
-- **Permissions**: Preserve file permissions and attributes
-- **Timestamps**: Keep original modification dates
+With an archive open, click **Extract Here** in the toolbar to extract into the folder that contains the archive, with no folder picker. It uses the selection if you have one, otherwise the whole archive.
+
+### Extract from the Command Line
+
+```bash
+rusty-compress extract archive.zip              # into the archive's folder
+rusty-compress extract archive.zip --here       # same as the default
+rusty-compress extract archive.zip --to ~/Desktop/out
+```
+
+The destination folder must already exist. The progress window shows the extraction, and the main window is not opened.
+
+### Extract from Finder (macOS)
+
+After the [Finder extension is installed](https://github.com/vanhonit/rusty-compress#macos-finder-extension-right-click-extract), right-click one or more archives in Finder:
+
+- **Extract Here with Rusty**: extracts each archive into the folder that contains it
+- **Rusty Extract To…**: choose a destination folder
+
+Only a progress window is shown. Password-protected archives open the main window so you can enter the password. See the [README](https://github.com/vanhonit/rusty-compress#macos-finder-extension-right-click-extract) for setup.
+
+### Safety
+
+Entries whose paths try to leave the destination folder (for example `../../etc/file`) are skipped. Everything else is extracted with its folder structure.
 
 ## File Preview
 
 ### Previewing Images
 
-1. Navigate to an image file within an archive
-2. Double-click the image file
-3. Image opens in your system default image viewer
+1. Hover over an image inside an archive to see a preview
+2. Double-click the image to open it in your system's default image viewer. The file is extracted to a temporary folder that is deleted when the last window closes
+3. Images from single-file `.gz` and `.bz2` archives can be previewed up to 50 MiB
 
 ### Viewing File Details
 
-**Right-click** on any file to see:
-- File name and extension
-- File size
-- Modification date
-- File type
-- Compression ratio (for archives)
+**Right-click** a file and choose **Properties**. For single-file `.bz2` archives the size is shown as 0, because the format does not store the original size.
 
 ### Opening Files in Default Applications
 
@@ -137,22 +144,15 @@ Right-click in the file list to sort by:
 
 ## Computing Checksums
 
-### Single File Checksum
+The **Checksum** button is available while an archive is open. It computes the checksum of the archive file itself.
 
-1. Select a file (either in filesystem or within archive)
-2. Click the "Checksum" button in the toolbar
-3. Choose your preferred algorithm:
+1. Open the archive
+2. Click **Checksum** in the toolbar
+3. Click **Compute** on the algorithm you need:
    - **MD5**: Fast, basic verification
-   - **SHA1**: More secure than MD5
+   - **SHA1**: Legacy compatibility
    - **SHA256**: Recommended for most use cases
    - **SHA512**: Highest security
-
-### Batch Checksum Computation
-
-1. Select multiple files using `Ctrl/Cmd + Click`
-2. Click "Checksum" button
-3. Choose algorithm
-4. View progress and results for each file
 
 ### Understanding Checksum Results
 
@@ -168,93 +168,36 @@ Status: ✅ Complete
 - **File Integrity**: Check if files have been modified
 - **Backup Verification**: Confirm backup copies match originals
 
-## Advanced Features
+## Multiple Tabs
 
-### Working with Multiple Archives
+- `Ctrl/Cmd + T`: new tab
+- `Ctrl/Cmd + W`: close tab (not the last one)
+- `Ctrl/Cmd + 1-9`: jump to a tab by position
 
-1. **Open Multiple Tabs**: 
-   - `Ctrl/Cmd + T` for new tab
-   - Drag archive to tab bar
-   - Right-click archive → "Open in New Tab"
-
-2. **Switch Between Tabs**:
-   - Click tab headers
-   - `Ctrl/Cmd + Tab` to cycle through tabs
-   - `Ctrl/Cmd + 1-9` to jump to specific tab
-
-3. **Compare Archives**: 
-   - Open archives in separate tabs
-   - Compare contents side by side
-
-### File Management Within Archives
-
-1. **Search Files**:
-   - Press `Ctrl/Cmd + F` to open search
-   - Type file name or pattern
-   - Results shown in real-time
-
-2. **Filter Files**:
-   - Use the filter dropdown in toolbar
-   - Filter by file type (images, documents, etc.)
-   - Toggle hidden files
-
-3. **File Operations**:
-   - Delete files from archive (not yet implemented)
-   - Rename files within archive (not yet implemented)
-   - Add files to archive (not yet implemented)
+Each tab keeps its own location, selection, and archive password.
 
 ## Keyboard Shortcuts
 
-### File Operations
-
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl/Cmd + O` | Open file |
-| `Ctrl/Cmd + E` | Extract selected |
-| `Ctrl/Cmd + Shift + E` | Extract all |
-| `Ctrl/Cmd + C` | Copy file |
-| `Ctrl/Cmd + V` | Paste file |
-| `Delete` | Delete selected |
-
-### Navigation
-
-| Shortcut | Action |
-|----------|--------|
-| `Alt + ←` | Back |
-| `Alt + →` | Forward |
-| `Alt + ↑` | Parent directory |
-| `Ctrl/Cmd + F` | Search |
-| `Ctrl/Cmd + A` | Select all |
-
-### Window Management
-
-| Shortcut | Action |
-|----------|--------|
+| `Enter` | Open the single selected item |
+| `Escape` | Clear the selection |
+| `Backspace` | Go up one folder |
 | `Ctrl/Cmd + T` | New tab |
 | `Ctrl/Cmd + W` | Close tab |
-| `Ctrl/Cmd + Tab` | Next tab |
-| `Ctrl/Cmd + Shift + Tab` | Previous tab |
-
-### Application
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl/Cmd + Q` | Quit application |
-| `Ctrl/Cmd + ,` | Preferences |
-| `F1` | Help/Documentation |
-| `Ctrl/Cmd + H` | Show in Finder/Explorer |
+| `Ctrl/Cmd + 1-9` | Switch to tab |
+| `Ctrl/Cmd + N` | Create archive from the selection (filesystem only) |
 
 ## Common Workflows
 
 ### Workflow 1: Download Verification
 
 1. Download an archive file from the internet
-2. Right-click the downloaded file
-3. Select "Compute Checksum"
-4. Choose SHA256 algorithm
-5. Compare result with provided checksum
-6. ✅ If matches: File is authentic
-7. ❌ If differs: File may be corrupted
+2. Open it in Rusty Compress
+3. Click **Checksum** and compute SHA256
+4. Compare the result with the published checksum
+5. ✅ If matches: File is authentic
+6. ❌ If differs: File may be corrupted
 
 ### Workflow 2: Archive Exploration
 
@@ -262,8 +205,7 @@ Status: ✅ Complete
 2. Open archive in Rusty Compress
 3. Browse through directory structure
 4. Preview specific files of interest
-5. Extract only what you need
-6. Delete temporary extracted files when done
+5. Select only what you need and click **Extract…**
 
 ### Workflow 3: System Backup Verification
 
@@ -281,7 +223,6 @@ Status: ✅ Complete
 3. Browse application structure
 4. Preview app icon and resources
 5. Extract specific assets if needed
-6. Verify app integrity before installation
 
 ## Tips and Tricks
 
@@ -293,15 +234,14 @@ Status: ✅ Complete
 
 ### Security Best Practices
 
-- **Unknown Archives**: Extract to quarantine directory first
+- **Unknown Archives**: Extract to a quarantine folder first
 - **Executable Files**: Don't run executables from untrusted archives
-- **Password Archives**: Use external tools for password-protected archives
+- **Passwords**: The password is kept only for the open tab, in memory
 
 ### Workflow Efficiency
 
-- **Recent Files**: Use recent files menu for quick access
-- **Bookmarks**: Add frequently accessed folders to bookmarks (coming soon)
-- **Default Destination**: Set default extraction location in preferences
+- **Extract Here** extracts next to the archive, without a folder picker
+- **Finder right-click** on macOS extracts without opening the main window (see the README)
 
 ## Troubleshooting
 
@@ -309,33 +249,32 @@ Status: ✅ Complete
 
 **Possible causes**:
 - File is corrupted
-- Unsupported archive format
-- File is password-protected
+- Unsupported archive format (7z cannot be opened yet)
+- File is password-protected and no password was given
 
 **Solutions**:
 - Verify file integrity with checksum
 - Check supported formats
-- Use specialized tools for encrypted archives
+- Enter the password when prompted. A damaged encrypted RAR may also report "incorrect password" (a RAR4 limitation)
 
 ### Extraction Fails
 
 **Common issues**:
 - Insufficient disk space
-- Permission denied
-- Corrupted archive
+- Permission denied at the destination
+- Corrupted archive. Fake or invalid `.gz` files show a clear error
 
 **Fixes**:
 - Free up disk space
-- Run with admin privileges
+- Choose a destination you can write to
 - Verify archive integrity first
 
 ### Checksum Computation Stuck
 
 **Troubleshoot**:
-- Cancel and restart the operation
 - Try a different algorithm
 - Check system resources
-- Verify file is accessible
+- Verify the file is accessible
 
 <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; margin-top: 2rem;">
     <div class="card-header">

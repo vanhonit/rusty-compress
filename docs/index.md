@@ -9,7 +9,7 @@ subtitle: A modern, cross-platform desktop archive manager
         <h2 style="font-size: 2.5rem; margin-bottom: 1.5rem; color: #667eea;">Welcome to Rusty Compress</h2>
         <p style="font-size: 1.25rem; color: #4a5568; margin-bottom: 2rem;">
             A powerful, cross-platform desktop archive manager built with Tauri and React. 
-            Manage ZIP, TAR, and RAR archives with a modern, intuitive interface.
+            Manage ZIP, TAR, RAR, and single-file GZ / BZ2 archives, including password-protected ones, with a native, intuitive interface.
         </p>
         <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-top: 2rem;">
             <a href="/installation.html" class="btn">Get Started</a>
@@ -25,7 +25,21 @@ subtitle: A modern, cross-platform desktop archive manager
         <div class="card-header">
             <h3 class="card-title">📦 Multi-Format Support</h3>
         </div>
-        <p>Handle ZIP, JAR, APK, XAPK, IPA, TAR, TAR.GZ, TGZ, TAR.BZ2, TBZ2, and RAR archives with a unified interface.</p>
+        <p>Handle ZIP, JAR, APK, XAPK, IPA, TAR, TAR.GZ, TGZ, TAR.BZ2, TBZ2, single-file GZ / BZ2, and RAR archives with a unified interface.</p>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">🔑 Password Support</h3>
+        </div>
+        <p>Browse, preview, and extract encrypted ZIP (ZipCrypto and AES) and RAR archives. The password is remembered for each tab.</p>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">🖱️ Finder Integration</h3>
+        </div>
+        <p>On macOS, right-click an archive in Finder to extract it with <em>Extract Here with Rusty</em> or <em>Rusty Extract To…</em>.</p>
     </div>
 
     <div class="card">
@@ -74,6 +88,7 @@ subtitle: A modern, cross-platform desktop archive manager
         <li>Clone the repository: <code>git clone https://github.com/vanhonit/rusty-compress.git</code></li>
         <li>Navigate to the directory and install dependencies</li>
         <li>Run <code>npm run tauri dev</code> to start the development server</li>
+        <li>On macOS, run <code>npm run build:mac -- --install</code> to add the right-click Finder menu</li>
     </ol>
     <a href="/installation.html" class="btn" style="background: white; color: #667eea;">View Full Installation Guide</a>
 </div>
@@ -85,6 +100,7 @@ Rusty Compress integrates seamlessly with your operating system:
 - **File Associations**: Automatically handles supported archive types
 - **System Menus**: Right-click integration for quick actions
 - **Double-Click**: Open archives directly from your file manager
+- **Finder Integration**: Right-click archives in Finder on macOS to extract them without opening the main window
 - **Preview**: View images directly from archives without extraction
 
 ## Technology Stack

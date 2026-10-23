@@ -66,7 +66,30 @@ This will:
 - Start the Vite development server
 - Launch the application window
 
-### Method 2: Using Package Manager (Coming Soon)
+### Method 2: Build the macOS App with the Finder Extension
+
+On macOS, `npm run build:mac` builds the app and the right-click Finder extension, then signs them. It needs Xcode Command Line Tools (`xcode-select --install`), which provide `swiftc` and `lipo`.
+
+```bash
+npm install
+npm run build:mac                 # build and sign the app
+npm run build:mac -- --install    # also copy to /Applications and register the extension
+```
+
+Flags:
+
+| Flag | Effect |
+|------|--------|
+| `--skip-tauri` | Reuse the last Tauri build instead of rebuilding |
+| `--install` | Copy the app to `/Applications` and register the Finder extension |
+| `--restart-finder` | Run `killall Finder` after `--install` |
+| `--dmg` | Also create a DMG in `src-tauri/target/release/bundle/dmg/` |
+
+Signing uses a free **Apple Development** certificate if you have one (Xcode > Settings > Accounts). Otherwise it falls back to ad-hoc signing, which works on your own Mac. The first signed build may show a keychain prompt. Click **Always Allow**.
+
+Then turn on the extension in **System Settings > General > Login Items & Extensions > Finder**, or run `pluginkit -e use -i com.rusty-compress.app.FinderExtension`. If the menu does not appear, run `killall Finder`. See the [README](https://github.com/vanhonit/rusty-compress#macos-finder-extension-right-click-extract) for details, including Gatekeeper steps on other Macs.
+
+### Method 3: Using Package Manager (Coming Soon)
 
 We're working on package distribution for easier installation:
 
@@ -74,7 +97,7 @@ We're working on package distribution for easier installation:
 - **Snap** (Linux): `sudo snap install rusty-compress`
 - **Chocolatey** (Windows): `choco install rusty-compress`
 
-### Method 3: Download Pre-built Binaries (Coming Soon)
+### Method 4: Download Pre-built Binaries (Coming Soon)
 
 Pre-built installers will be available for:
 
@@ -95,7 +118,7 @@ cd src-tauri
 cargo test
 
 # Run linter
-cargo clippy
+cargo clippy --all-targets
 ```
 
 ## Troubleshooting
@@ -145,6 +168,17 @@ sudo apt-get install libwebkit2gtk-4.0-dev build-essential curl wget file libxdo
 1. Download [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/)
 2. Install "Desktop development with C++"
 3. Restart terminal and try again
+
+#### macOS Finder Menu Missing
+
+**Problem**: "Extract Here with Rusty" does not appear in the Finder context menu
+
+**Solution**:
+```bash
+pluginkit -e use -i com.rusty-compress.app.FinderExtension
+pluginkit -m -i com.rusty-compress.app.FinderExtension   # a leading "+" means enabled
+killall Finder
+```
 
 #### macOS Permission Issues
 
@@ -204,22 +238,19 @@ code --install-extension dbaeumer.vscode-eslint
 ```json
 {
   "rust-analyzer.cargo.loadOutDirsFromCheck": true,
-  "rust-analyzer.procMacro.enable": true,
-  "tauri.devPath": "http://localhost:1420",
-  "tauri.beforeDevCommand": "npm run dev"
+  "rust-analyzer.procMacro.enable": true
 }
 ```
 
 ### Environment Variables
 
-Create a `.env` file in the project root:
+Set these in your shell when you need them:
 
 ```bash
-# Development settings
-VITE_TAURI_HOST=localhost
-VITE_TAURI_PORT=1420
+# Use a LAN address for the dev server (also enables HMR on port 1421)
+TAURI_DEV_HOST=192.168.1.10
 
-# Rust environment
+# Rust logging
 RUST_LOG=debug
 RUST_BACKTRACE=1
 ```
@@ -238,7 +269,7 @@ npm run tauri build
 
 Build artifacts will be in `src-tauri/target/release/bundle/`:
 
-- **macOS**: `.dmg` file
+- **macOS**: `.dmg` file (or use `npm run build:mac` for the app with the Finder extension)
 - **Windows**: `.exe` and `.msi` installers
 - **Linux**: `.AppImage`, `.deb`, and `.rpm` packages
 
@@ -252,13 +283,13 @@ Edit `tauri.conf.json` to customize:
     "beforeBuildCommand": "npm run build",
     "beforeDevCommand": "npm run dev",
     "devPath": "http://localhost:1420",
-    "distDir": "../dist"
+    "frontendDist": "../dist"
   },
   "tauri": {
     "bundle": {
       "identifier": "com.rustycompress.app",
       "icon": ["icons/icon.png"],
-      "targets": ["dmg", "msi", "deb"]
+      "targets": "all"
     }
   }
 }

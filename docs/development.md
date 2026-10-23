@@ -69,15 +69,22 @@ rusty-compress/
 │   └── main.jsx              # Entry point
 ├── src-tauri/                # Rust Backend
 │   ├── src/
-│   │   ├── lib.rs           # Main Tauri commands
+│   │   ├── lib.rs           # Tauri commands, CLI, file-open handling
 │   │   ├── data_type.rs     # Shared types
-│   │   ├── utils.rs         # Utilities
+│   │   ├── utils.rs         # Format detection, password errors, safe_join
 │   │   ├── file_manager.rs  # File operations
-│   │   ├── zip.rs           # ZIP handler
+│   │   ├── zip.rs           # ZIP handler (incl. password)
 │   │   ├── tar.rs           # TAR handler
-│   │   └── rar.rs           # RAR handler
+│   │   ├── rar.rs           # RAR handler (incl. password)
+│   │   ├── compressed.rs    # Single-file .gz / .bz2
+│   │   ├── finder.rs        # Finder right-click URL parsing and requests
+│   │   └── sevenz.rs        # 7z creation via external 7z CLI
+│   ├── tests/fixtures/      # Test fixtures (crypted.rar)
+│   ├── Info.plist           # macOS bundle info, including the rustycompress:// URL scheme
 │   ├── Cargo.toml           # Rust dependencies
 │   └── tauri.conf.json      # Tauri configuration
+├── macos/FinderExtension/   # Finder right-click extension (FinderSync.swift)
+├── scripts/build-macos.sh   # macOS build, sign, and install (npm run build:mac)
 └── docs/                    # Jekyll documentation
     ├── _layouts/
     ├── _includes/
@@ -109,17 +116,18 @@ cargo build
 
 ### Running Tests
 
-```bash
-# Frontend tests
-npm test
+There are no frontend tests. Backend tests are Rust unit tests:
 
+```bash
 # Backend tests
 cd src-tauri
 cargo test
 
-# Run specific test
-cargo test test_read_directory
+# Run a single test by name
+cargo test <test_name>
 ```
+
+The tests cover ZIP and RAR password handling (RAR uses `tests/fixtures/crypted.rar`, password `unrar`), TAR extraction (including files larger than 8 KB), gz / bz2 handling, and Finder URL parsing. Zip test archives are built in temporary folders.
 
 ## Frontend Development
 
@@ -295,45 +303,20 @@ impl From<ArchiveError> for String {
 
 ### Frontend Testing
 
-```javascript
-// src/components/__tests__/Tab.test.jsx
-import { render, screen } from '@testing-library/react';
-import Tab from '../Tab';
-
-describe('Tab Component', () => {
-  test('renders tab content', () => {
-    render(<Tab title="Test Tab" />);
-    expect(screen.getByText('Test Tab')).toBeInTheDocument();
-  });
-});
-```
+There is no frontend test setup. Check UI changes by running `npm run tauri dev` and testing the flow manually.
 
 ### Backend Testing
+
+Unit tests live in `#[cfg(test)]` modules in `utils.rs`, `zip.rs`, `rar.rs`, `tar.rs`, `compressed.rs`, and `finder.rs`:
 
 ```rust
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_read_directory() {
-        let result = read_directory("/tmp").await;
-        assert!(result.is_ok());
-        let files = result.unwrap();
-        assert!(!files.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_extract_files() {
-        let archive_path = "test_data/test.zip";
-        let output_path = "/tmp/test_extraction";
-        let result = extract_files(
-            &app_handle(),
-            archive_path,
-            output_path,
-            vec![]
-        ).await;
-        assert!(result.is_ok());
+    #[test]
+    fn test_finder_url_parsing() {
+        // see src-tauri/src/finder.rs for the real tests
     }
 }
 ```
@@ -343,15 +326,12 @@ mod tests {
 ### Linting
 
 ```bash
-# Frontend linting
-npm run lint
-
-# Backend linting
+# Backend linting (all targets, including tests)
 cd src-tauri
-cargo clippy
+cargo clippy --all-targets
 
 # Fix issues automatically
-cargo clippy --fix
+cargo clippy --all-targets --fix
 ```
 
 ### Formatting
@@ -360,10 +340,19 @@ cargo clippy --fix
 # Format Rust code
 cd src-tauri
 cargo fmt
-
-# Format JavaScript/JSX
-npm run format
 ```
+
+There is no JavaScript linter or formatter configured in `package.json`.
+
+### macOS Finder Extension
+
+```bash
+npm run build:mac                   # build, embed, and sign the app with the Finder extension
+npm run build:mac -- --install      # also install to /Applications and register the extension
+npm run build:mac -- --skip-tauri   # reuse the last Tauri build
+```
+
+See the README section on the Finder extension for the flags and macOS setup.
 
 ## Performance Optimization
 
@@ -499,9 +488,7 @@ test: add integration tests for checksum computation
 2. Make your changes
    ```bash
    # Make changes
-   npm test
-   cargo test
-   cargo clippy
+   cd src-tauri && cargo test && cargo clippy --all-targets
    ```
 
 3. Commit your changes

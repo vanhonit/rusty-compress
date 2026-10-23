@@ -6,11 +6,14 @@ A modern, cross-platform desktop archive manager built with Tauri (Rust backend)
 
 ## Features
 
-- **Multi-Format Support**: Handle ZIP, JAR, APK, XAPK, IPA, TAR, TAR.GZ, TGZ, TAR.BZ2, TBZ2, and RAR archives
+- **Multi-Format Support**: ZIP, JAR, APK, XAPK, IPA, TAR, TAR.GZ, TGZ, TAR.BZ2, TBZ2, single-file GZ / BZ2, and RAR archives. 7z archives can be created (via the external `7z` tool)
+- **Password-Protected Archives**: Browse, view, preview, and extract encrypted ZIP (ZipCrypto and AES) and RAR archives. The app asks for the password and remembers it per tab
 - **Unified Interface**: Browse both filesystem directories and archive contents seamlessly
-- **File Extraction**: Extract individual files or entire archives with progress tracking
+- **File Extraction**: Extract individual files or entire archives with progress tracking. Entries whose paths try to escape the destination folder (`..`, absolute paths) are skipped
+- **macOS Finder Integration**: Right-click an archive in Finder to choose *Extract Here with Rusty* or *Rusty Extract To…*. Extraction runs in the background with only a small progress window
 - **Preview Capabilities**: View images directly from archives without full extraction
 - **Checksum Verification**: Compute MD5, SHA1, SHA256, and SHA512 checksums with real-time progress
+- **Native macOS Look**: Neutral grays, one blue accent, and the system font (SF Pro). Follows the system Light and Dark modes
 - **Cross-Platform**: Works on Windows, macOS, and Linux
 - **System Integration**: Automatic file associations for supported archive types
 - **Efficient Performance**: Rust backend for fast archive operations
@@ -76,14 +79,14 @@ This starts the Vite dev server on port 1420 with HMR on port 1421.
 
 ### Backend Development
 
-Build and test the Rust backend:
-
 ```bash
 cd src-tauri
 cargo build
 cargo test
-cargo clippy
+cargo clippy --all-targets
 ```
+
+The Rust unit tests cover ZIP and RAR password checks, TAR extraction (including entries larger than 8 KB), single-file gzip and bzip2 round trips, path-safety helpers, and Finder URL parsing.
 
 ## Building for Production
 
@@ -104,33 +107,51 @@ This creates platform-specific installers in `src-tauri/target/release/bundle/`:
 - **Windows**: `.exe` installer and `.msi`
 - **Linux**: `.AppImage`, `.deb`, and `.rpm` packages
 
+### Build the macOS App with the Finder Extension
+
+```bash
+npm run build:mac                  # app with the Finder extension, signed
+npm run build:mac -- --install     # also copy to /Applications and register the extension
+```
+
+See [macOS Finder Extension](#macos-finder-extension-right-click-extract) below. This needs Xcode Command Line Tools.
+
 ## Project Structure
 
 ```
 rusty-compress/
 ├── src/                          # React frontend
-│   ├── components/               # Reusable UI components
-│   │   ├── Tab.jsx              # Tab component for file/archive views
-│   │   └── TabBar.jsx           # Tab bar management
-│   ├── modules/                 # Feature modules
-│   │   ├── FileManager/         # Main file browsing interface
-│   │   ├── Extract/             # Extraction progress window
-│   │   └── Checksum/            # Checksum computation modal
-│   ├── index.css                # Global styles
-│   └── main.jsx                 # React entry point
-├── src-tauri/                   # Rust backend
+│   ├── components/               # Tab bar and tab components
+│   │   ├── Tab.jsx
+│   │   └── TabBar.jsx
+│   ├── contexts/TabContext.jsx   # Multi-tab state (includes the per-tab archive password)
+│   ├── modules/
+│   │   ├── FileManager/          # Main file browsing interface
+│   │   ├── Extract/              # Extraction progress window and password prompt
+│   │   ├── Archive/              # Create-archive modal and progress window
+│   │   └── Checksum/             # Checksum computation modal
+│   ├── index.css                 # Global styles and semantic color tokens
+│   └── main.jsx                  # React entry point
+├── src-tauri/                    # Rust backend
 │   ├── src/
-│   │   ├── lib.rs              # Main Tauri entry point
-│   │   ├── data_type.rs        # Shared data structures
-│   │   ├── utils.rs            # Archive type detection
-│   │   ├── file_manager.rs     # Filesystem operations
-│   │   ├── zip.rs              # ZIP archive handler
-│   │   ├── tar.rs              # TAR archive handler
-│   │   └── rar.rs              # RAR archive handler
-│   ├── Cargo.toml              # Rust dependencies
-│   └── tauri.conf.json         # Tauri configuration
-├── package.json                 # Node.js dependencies
-└── CLAUDE.md                   # Project documentation
+│   │   ├── lib.rs               # Tauri commands, extraction orchestration, CLI
+│   │   ├── data_type.rs         # Shared data structures
+│   │   ├── utils.rs             # Archive type detection, safe_join, password error prefixes
+│   │   ├── file_manager.rs      # Filesystem operations
+│   │   ├── zip.rs               # ZIP archive handler (including passwords)
+│   │   ├── tar.rs               # TAR archive handler
+│   │   ├── compressed.rs        # Single-file gzip / bzip2 handler
+│   │   ├── rar.rs               # RAR archive handler (including passwords)
+│   │   ├── sevenz.rs            # 7z creation via the external 7z CLI
+│   │   └── finder.rs            # macOS Finder request parsing
+│   ├── tests/fixtures/           # Test archives (crypted.rar, password "unrar")
+│   ├── Cargo.toml               # Rust dependencies
+│   ├── Info.plist               # URL scheme registration (rustycompress://)
+│   └── tauri.conf.json          # Tauri configuration
+├── macos/FinderExtension/        # FinderSync extension (right-click menu)
+├── scripts/build-macos.sh        # Backs `npm run build:mac`
+├── package.json                  # Node.js dependencies
+└── CLAUDE.md                     # Project documentation
 ```
 
 ## Usage
@@ -138,40 +159,59 @@ rusty-compress/
 ### Opening Archives
 
 1. **File Association**: Double-click any supported archive file in your file manager
-2. **In-App**: Use the file browser to navigate to archives and open them
+2. **In-App**: Browse to an archive and open it
+3. **Command Line**: `rusty-compress <archive>` opens it in the app. `rusty-compress extract <archive> [--here | --to <dest>]` extracts it (see below)
+
+### Password-Protected Archives
+
+- ZIP (ZipCrypto or AES) and RAR archives that have a password open with a password prompt
+- The password is kept per tab and reused for browsing, previews, and extraction
+- A wrong password shows "incorrect password" and asks again
+- Extraction checks the password before the progress window opens
 
 ### Extracting Files
 
-1. Browse to an archive and select files you want to extract
-2. Click the "Extract" button in the toolbar
-3. Choose destination directory
-4. Monitor progress in the extraction window
+1. Browse to an archive and select the files you want to extract
+2. Click **Extract…** in the toolbar and choose a destination folder
+3. Monitor progress in the extraction window
+
+**Extract Here** extracts into the folder that contains the archive.
+
+From the command line, `rusty-compress extract <archive> --to <dest>` extracts to a folder, and `--here` (or no option) extracts next to the archive.
+
+### Extracting from Finder (macOS)
+
+Right-click an archive in Finder and choose **Extract Here with Rusty** or **Rusty Extract To…**. See the [macOS Finder Extension](#macos-finder-extension-right-click-extract) section.
 
 ### Computing Checksums
 
-1. Select a file or multiple files
-2. Click the "Checksum" button
-3. Choose your preferred algorithm (MD5, SHA1, SHA256, SHA512)
-4. View real-time progress and results
+1. Open an archive (the Checksum button is enabled while an archive is open)
+2. Click **Checksum** in the toolbar
+3. Click **Compute** next to the algorithm you need (MD5, SHA1, SHA256, SHA512)
+4. View real-time progress and the result
 
 ### Previewing Images
 
-- Double-click image files within archives to preview them
-- Images are extracted temporarily and displayed in your system viewer
+- Hover over an image inside an archive to see a preview
+- Double-click an image to open it in your system viewer. The file is extracted to a temporary folder that is deleted when the last window closes
+- Single-file `.gz` and `.bz2` images can be previewed up to 50 MiB
 
 ## Tauri Commands
 
-The backend exposes these commands to the frontend:
+The frontend calls these with `invoke`, using camelCase argument names. `?` marks an optional argument. The full reference is in [docs/api.md](docs/api.md).
 
-| Command | Description |
-|---------|-------------|
-| `read_directory(path)` | List files in a filesystem directory |
-| `open_file(path)` | Open a file with the system default application |
-| `archive_file_details(archive_path, file_path, state)` | Get contents of an archive, optionally filtered by subdirectory |
-| `extract_files(app_handle, archive_path, output_path, selected_files)` | Extract files from archive to destination |
-| `view_file_in_archive(archive_path, file_name, state)` | View a specific file from archive in system viewer |
-| `get_image_preview(archive_path, file_path)` | Get image preview from archive (returns data URL) |
-| `compute_checksum(app_handle, file_path, algorithm)` | Compute checksum with progress reporting |
+| Command | Arguments |
+|---------|-----------|
+| `read_directory` | `path` |
+| `open_file` | `path`, `filePath?` |
+| `archive_file_details` | `sourcePath`, `filePath?`, `password?` |
+| `extract_files` | `archivePath`, `outputPath`, `selectedFiles?`, `password?` |
+| `view_file_in_archive` | `archivePath`, `fileName`, `password?` |
+| `get_image_preview` | `archivePath`, `filePath`, `password?` (returns a data URL) |
+| `compute_checksum` | `filePath`, `algorithm` |
+| `path_exists` | `path` |
+| `create_archive` | `files`, `outputPath`, `archiveFormat` (`zip`, `tar`, `7z`), `compressionLevel` |
+| `take_files` | none (drains file-open paths buffered before the UI was ready) |
 
 ## Development Notes
 
@@ -192,23 +232,17 @@ The backend exposes these commands to the frontend:
 ### Testing
 
 ```bash
-# Frontend tests (if configured)
-npm test
-
-# Backend tests
 cd src-tauri
 cargo test
 ```
 
+There are no frontend tests.
+
 ### Code Quality
 
 ```bash
-# Rust linter
 cd src-tauri
-cargo clippy
-
-# Frontend linter (if configured)
-npm run lint
+cargo clippy --all-targets
 ```
 
 ## Contributing
@@ -232,20 +266,76 @@ Contributions are welcome! Please follow these steps:
 
 ## File Type Support
 
-### ZIP-based Formats
-- `.zip` - Standard ZIP archives
-- `.jar` - Java archives
-- `.apk` - Android application packages
-- `.xapk` - Android expanded app packages
-- `.ipa` - iOS application packages
+| Format | List / view / preview | Extract | Create | Password |
+|--------|-----------------------|---------|--------|----------|
+| ZIP family (zip, jar, apk, xapk, ipa) | yes | yes | yes (`zip`) | yes (ZipCrypto + AES) |
+| TAR family (tar, tar.gz, tgz, tar.bz2, tbz2) | yes | yes | yes (`tar`, uncompressed) | n/a |
+| Single-file gzip / bzip2 (gz, bz2) | yes (one entry) | yes | no | n/a |
+| RAR | yes | yes | no | yes |
+| 7z | no | no | yes, via external `7z` CLI | no |
 
-### TAR-based Formats
-- `.tar` - Tar archives
-- `.tar.gz`, `.tgz` - Gzipped tar archives
-- `.tar.bz2`, `.tbz2` - Bzip2 compressed tar archives
+- **ZIP family**: `.zip`, `.jar`, `.apk`, `.xapk`, `.ipa`
+- **TAR family**: `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tbz2` (open as folders)
+- **Single-file gzip / bzip2**: `.gz`, `.bz2`. These show as one entry named after the file (`kubeconfig.gz` lists `kubeconfig`). `.bz2` entries show size 0 because the format has no size field
+- **RAR**: `.rar`
+- **7z**: `.7z`. Creation only; requires the `7z` command-line tool
 
-### RAR Format
-- `.rar` - RAR archives
+## macOS Finder Extension (right-click Extract)
+
+Right-click a supported archive in Finder to see **Extract Here with Rusty** and **Rusty Extract To…**. The items appear only when every selected item is a supported archive: zip family (zip, jar, apk, xapk, ipa), tar family (tar, tar.gz, tgz, tar.bz2, tbz2), gz, bz2, and rar. 7z is not offered.
+
+- **Extract Here with Rusty** extracts each selected archive into the folder that contains it.
+- **Rusty Extract To…** asks for a destination folder and extracts the selected archives there. Cancelling the picker does nothing.
+- Password-protected archives open the main window so you can enter the password.
+- Extraction runs in the background and shows only a small progress window. If the main window was never opened, the app quits when the last progress window closes (or when the folder picker is cancelled). Clicking the Dock icon shows the main window.
+- macOS places the items in Finder's extension section of the context menu, near Quick Actions. Apps have no API to move them. The icons are white.
+
+The extension is a FinderSync `.appex` in `macos/FinderExtension/`. It sends `rustycompress://extract?mode=here|to&path=<absolute path>` to the app. The app accepts only existing local archive files, and Extract To always asks for a folder.
+
+### Requirements
+
+- Xcode Command Line Tools (`xcode-select --install`) for `swiftc` and `lipo`
+- A code-signing identity. A free Apple ID works for your own Mac: create an "Apple Development" certificate in Xcode > Settings > Accounts. Without one, the build falls back to ad-hoc signing, which works locally but may be blocked elsewhere.
+
+### Build and install
+
+```bash
+npm run build:mac                          # builds the app with the extension, signed
+npm run build:mac -- --install             # also copies to /Applications and registers the extension
+npm run build:mac -- --skip-tauri --install --restart-finder   # reuse the last build; restart Finder
+npm run build:mac -- --dmg                 # also creates a DMG
+```
+
+The first signed run may show a keychain prompt. Click **Always Allow**.
+
+### Enable the extension
+
+Open **System Settings > General > Login Items & Extensions > Finder** and turn on **Rusty Compress**. Or run:
+
+```bash
+pluginkit -e use -i com.rusty-compress.app.FinderExtension
+```
+
+Verify it is registered; a leading `+` means enabled:
+
+```bash
+pluginkit -m -i com.rusty-compress.app.FinderExtension
+```
+
+If the menu does not appear, run `killall Finder`.
+
+### Uninstall
+
+```bash
+pluginkit -e ignore -i com.rusty-compress.app.FinderExtension
+rm -rf "/Applications/Rusty Compress.app"
+```
+
+### Limitations
+
+- Free and ad-hoc signed builds are not notarized. On another Mac, remove the quarantine flag with `xattr -dr com.apple.quarantine "/Applications/Rusty Compress.app"`, or use **Privacy & Security > Open Anyway**. Then enable the extension manually as above.
+- Distributing to other users needs a paid Developer ID certificate and notarization.
+- Any app can open `rustycompress://` URLs. The app only acts on existing local archive files, and Extract To always asks for a folder.
 
 ## Troubleshooting
 
@@ -267,21 +357,24 @@ npm install
 ### Runtime Issues
 
 **Archive not opening:**
-- Ensure file format is supported
+- Ensure the file format is supported (7z can be created, but not opened)
 - Check file permissions
-- Verify file is not corrupted
+- Verify the file is not corrupted
+
+**Password prompt keeps appearing:**
+- The password is wrong. For a damaged encrypted RAR, the app may also report an incorrect password (a RAR4 limitation)
 
 **Extraction fails:**
 - Check disk space
-- Verify write permissions to destination
-- Ensure archive is password-free (encrypted archives not yet supported)
+- Verify write permissions to the destination
+- Entries whose paths try to escape the destination are skipped
 
 ## Roadmap
 
-- [ ] Support for encrypted archives (password-protected ZIP, RAR)
-- [ ] Archive creation and compression
+- [ ] 7z read and extract support
+- [ ] Archive creation improvements (zip directory contents, compression levels)
 - [ ] Split archive handling
-- [ ] Batch extraction from multiple archives
+- [ ] Batch extraction from multiple archives inside the app
 - [ ] Archive search functionality
 - [ ] Custom themes and UI customization
 

@@ -21,280 +21,192 @@ const result = await invoke('command_name', {
 });
 ```
 
+## Command Reference
+
+The frontend calls commands with `invoke` and camelCase argument names. `?` marks an optional argument. Commands return `Result<T, String>`: the error is the rejection value.
+
+| Command | Arguments | Returns |
+|---------|-----------|---------|
+| `read_directory` | `path` | `FileInfo[]` |
+| `open_file` | `path`, `filePath?` | `FileInfo[] \| null` (archive contents for `.zip` / `.tar`, otherwise `null` after opening in the system app) |
+| `archive_file_details` | `sourcePath`, `filePath?`, `password?` | `FileInfo[]` |
+| `extract_files` | `archivePath`, `outputPath`, `selectedFiles?`, `password?` | `void` |
+| `view_file_in_archive` | `archivePath`, `fileName`, `password?` | `void` |
+| `get_image_preview` | `archivePath`, `filePath`, `password?` | data URL `string` |
+| `compute_checksum` | `filePath`, `algorithm` | `{ algorithm, hash }` |
+| `path_exists` | `path` | `boolean` |
+| `create_archive` | `files`, `outputPath`, `archiveFormat` (`zip`, `tar`, `7z`), `compressionLevel` | `void` |
+| `take_files` | none | `string[]` (file-open paths buffered before the UI was ready) |
+
+`FileInfo` is `{ name, is_dir, last_modified, size, mimetype, path }`.
+
+## Passwords
+
+Archive commands for ZIP and RAR accept an optional `password`. Errors use these prefixes, which the frontend uses to show the password prompt:
+
+| Prefix | Meaning |
+|--------|---------|
+| `PASSWORD_REQUIRED:` | The archive is encrypted and no password was given |
+| `INVALID_PASSWORD:` | The password was given but is wrong |
+
+```javascript
+try {
+  await invoke('extract_files', {
+    archivePath: '/home/user/secret.zip',
+    outputPath: '/home/user/out',
+    password: 'hunter2',
+  });
+} catch (err) {
+  if (String(err).startsWith('PASSWORD_REQUIRED:') || String(err).startsWith('INVALID_PASSWORD:')) {
+    // show the password prompt and retry
+  }
+}
+```
+
+For `extract_files`, the password is checked before the progress window opens, so a wrong password is returned as the rejection. Failures after that point arrive as `extract-error` events.
+
 ## File System Commands
 
 ### read_directory
 
 List contents of a filesystem directory.
 
-**Parameters**:
-- `path` (string): Absolute path to directory
-
-**Returns**:
-```typescript
-Array<{
-  name: string;
-  path: string;
-  size: number;
-  is_directory: boolean;
-  modified: string;
-  file_type: string;
-}>
-```
+**Arguments**: `path` (string)
 
 **Example**:
 ```javascript
-const files = await invoke('read_directory', { 
-  path: '/home/user/Documents' 
-});
-
-console.log(files);
-// [
-//   { name: 'Documents', path: '/home/user/Documents', size: 0, is_directory: true, ... },
-//   { name: 'file.txt', path: '/home/user/file.txt', size: 1024, is_directory: false, ... }
-// ]
+const files = await invoke('read_directory', { path: '/home/user/Documents' });
 ```
-
-**Error Cases**:
-- Directory doesn't exist
-- Insufficient permissions
-- Path is not a directory
 
 ### open_file
 
-Open a file with the system's default application.
+Open a file with the system's default application. For `.zip` and `.tar` files it returns the archive contents instead.
 
-**Parameters**:
-- `path` (string): Absolute path to file
-
-**Returns**: `void`
-
-**Example**:
-```javascript
-await invoke('open_file', { 
-  path: '/home/user/document.pdf' 
-});
-// Opens PDF in default PDF viewer
-```
-
-**Supported Operations**:
-- Opens file in system default application
-- Works for both local files and extracted archive files
-- Cross-platform compatibility
+**Arguments**: `path` (string), `filePath?` (string)
 
 ## Archive Management Commands
 
 ### archive_file_details
 
-Get contents of an archive, optionally filtered by subdirectory.
+Get the contents of an archive, optionally filtered by a subdirectory.
 
-**Parameters**:
-- `archive_path` (string): Path to archive file
-- `file_path` (string, optional): Path within archive (default: "" for root)
-- `state` (string): Current navigation state
-
-**Returns**:
-```typescript
-Array<{
-  name: string;
-  path: string;
-  size: number;
-  compressed_size: number;
-  is_directory: boolean;
-  modified: string;
-  file_type: string;
-  compression_method: string;
-}>
-```
+**Arguments**:
+- `sourcePath` (string): path to the archive
+- `filePath` (string, optional): path inside the archive (empty or omitted for the root)
+- `password` (string, optional): required for encrypted ZIP and RAR archives
 
 **Example**:
 ```javascript
-// Get root contents
-const rootFiles = await invoke('archive_file_details', { 
-  archive_path: '/home/user/archive.zip',
-  file_path: '',
-  state: 'browsing'
+const rootFiles = await invoke('archive_file_details', {
+  sourcePath: '/home/user/archive.zip',
+  filePath: '',
 });
 
-// Get specific subdirectory
-const subDirFiles = await invoke('archive_file_details', { 
-  archive_path: '/home/user/archive.zip',
-  file_path: 'subfolder/documents',
-  state: 'browsing'
+const subDirFiles = await invoke('archive_file_details', {
+  sourcePath: '/home/user/archive.zip',
+  filePath: 'subfolder/documents',
+  password: 'hunter2',   // only needed for encrypted archives
 });
 ```
 
 **Archive Format Support**:
-- ZIP, JAR, APK, XAPK, IPA
-- TAR, TAR.GZ, TGZ, TAR.BZ2, TBZ2
-- RAR
-
-**Performance Notes**:
-- Large archives may take time to read
-- Results are cached for subsequent calls
-- Memory usage scales with archive size
+- ZIP family (zip, jar, apk, xapk, ipa): browse, with password
+- TAR family (tar, tar.gz, tgz, tar.bz2, tbz2): browse
+- Single-file gz / bz2: one entry named after the file (`.bz2` size is 0)
+- RAR: browse, with password
+- 7z: not supported for browsing
 
 ### extract_files
 
-Extract files from an archive to destination directory.
+Extract files from an archive into a destination folder. The progress window opens after the password check. Entries whose paths would leave the destination (`..`, absolute paths) are skipped.
 
-**Parameters**:
-- `app_handle`: Tauri app handle for emitting events
-- `archive_path` (string): Path to archive file
-- `output_path` (string): Destination directory
-- `selected_files` (Array<string>): Files to extract (empty = all)
-
-**Returns**: `Promise<void>`
-
-**Events Emitted**:
-- `extract-progress`: Progress updates
-  ```typescript
-  { current: number, total: number, filename: string }
-  ```
-- `extract-complete`: Extraction finished
-  ```typescript
-  { success: boolean, message: string, files_extracted: number }
-  ```
-- `extract-error`: Error occurred
-  ```typescript
-  { error: string, details: string }
-  ```
+**Arguments**:
+- `archivePath` (string)
+- `outputPath` (string): destination folder
+- `selectedFiles` (string[], optional): entries to extract; omit for everything
+- `password` (string, optional)
 
 **Example**:
 ```javascript
-import { listen } from '@tauri-apps/api/event';
-
-// Listen for progress updates
-const unlisten = await listen('extract-progress', (event) => {
-  const { current, total, filename } = event.payload;
-  console.log(`Extracting ${current}/${total}: ${filename}`);
-  updateProgressBar(current / total * 100);
+await invoke('extract_files', {
+  archivePath: '/home/user/archive.zip',
+  outputPath: '/home/user/extracted',
+  selectedFiles: ['folder/file1.txt', 'folder/file2.pdf'],
 });
-
-// Extract files
-await invoke('extract_files', { 
-  app_handle: getCurrentWindow(),
-  archive_path: '/home/user/archive.zip',
-  output_path: '/home/user/extracted',
-  selected_files: ['folder/file1.txt', 'folder/file2.pdf']
-});
-
-// Clean up listener
-unlisten();
 ```
 
-**Extraction Options**:
-- Preserve directory structure
-- Maintain file permissions
-- Handle existing files
-- Progress reporting
+**Events**: progress and completion are reported by the extraction window through `extract-progress`, `extract-complete`, and `extract-error`. See [Event System](#event-system).
 
 ### view_file_in_archive
 
-View a specific file from archive in system viewer.
+Extract one file to a temporary folder and open it with the system's default app. The temporary folder is removed when the last window closes.
 
-**Parameters**:
-- `archive_path` (string): Path to archive file
-- `file_name` (string): Path to file within archive
-- `state` (string): Current navigation state
+**Arguments**:
+- `archivePath` (string)
+- `fileName` (string): path of the entry inside the archive
+- `password` (string, optional)
 
-**Returns**: `Promise<void>`
-
-**Example**:
 ```javascript
-await invoke('view_file_in_archive', { 
-  archive_path: '/home/user/archive.zip',
-  file_name: 'documents/report.pdf',
-  state: 'viewing'
+await invoke('view_file_in_archive', {
+  archivePath: '/home/user/archive.zip',
+  fileName: 'documents/report.pdf',
 });
-// Opens PDF in default viewer
 ```
-
-**Process**:
-1. Extracts file to temporary location
-2. Opens in system default viewer
-3. Cleans up temporary file when viewer closes
 
 ### get_image_preview
 
-Get image preview from archive as data URL.
+Return an image from an archive as a `data:` URL.
 
-**Parameters**:
-- `archive_path` (string): Path to archive file
-- `file_path` (string): Path to image file within archive
+**Arguments**:
+- `archivePath` (string)
+- `filePath` (string): image path inside the archive
+- `password` (string, optional)
 
-**Returns**: `Promise<string>` (Data URL)
+**Supported image formats**: jpg, jpeg, png, gif, webp, bmp, tiff, tif. For single-file `.gz` / `.bz2` archives, the decompressed image is limited to 50 MiB.
 
-**Example**:
 ```javascript
-const imageUrl = await invoke('get_image_preview', { 
-  archive_path: '/home/user/archive.zip',
-  file_path: 'images/photo.jpg'
+const imageUrl = await invoke('get_image_preview', {
+  archivePath: '/home/user/archive.zip',
+  filePath: 'images/photo.jpg',
 });
-
-// Display in React component
-<img src={imageUrl} alt="Preview" />
 ```
 
-**Supported Image Formats**:
-- JPEG, PNG, GIF, BMP, WEBP
-- TIFF (depending on system support)
+### create_archive
 
-**Performance Considerations**:
-- Large images may take time to extract
-- Consider implementing caching
-- Use thumbnails for preview lists
+Create a ZIP, uncompressed TAR, or 7z archive from files. 7z needs the external `7z` command-line tool.
+
+**Arguments**:
+- `files` (string[])
+- `outputPath` (string)
+- `archiveFormat` (`'zip' | 'tar' | '7z'`)
+- `compressionLevel` (number)
 
 ## Checksum Commands
 
 ### compute_checksum
 
-Compute file checksum with progress reporting.
+Compute a file checksum, reporting progress in 5% steps.
 
-**Parameters**:
-- `app_handle`: Tauri app handle for emitting events
-- `file_path` (string): Path to file
-- `algorithm` (string): Checksum algorithm ('MD5', 'SHA1', 'SHA256', 'SHA512')
+**Arguments**:
+- `filePath` (string)
+- `algorithm` (string): `'md5'`, `'sha1'`, `'sha256'`, or `'sha512'`. Case is ignored
 
-**Returns**: `Promise<string>` (Checksum value)
+**Returns**: `{ algorithm, hash }`
 
-**Events Emitted**:
-- `checksum-progress-{algorithm}`: Progress updates
-  ```typescript
-  { progress: number, current_block: number, total_blocks: number }
-  ```
-- `checksum-complete-{algorithm}`: Computation finished
-  ```typescript
-  { checksum: string, file_path: string, algorithm: string }
-  ```
-- `checksum-error-{algorithm}`: Error occurred
-  ```typescript
-  { error: string, file_path: string }
-  ```
+**Events**: `checksum-progress-{algorithm}` with the lowercase algorithm name, e.g. `checksum-progress-sha256`. The payload is a percentage number.
 
-**Example**:
 ```javascript
 import { listen } from '@tauri-apps/api/event';
 
-// Listen for progress updates
-const algorithm = 'SHA256';
-const unlisten = await listen(`checksum-progress-${algorithm}`, (event) => {
-  const { progress, current_block, total_blocks } = event.payload;
-  console.log(`Computing checksum: ${progress.toFixed(1)}%`);
-  updateProgressBar(progress);
+const unlisten = await listen('checksum-progress-sha256', (event) => {
+  console.log(`Computing checksum: ${event.payload}%`);
 });
 
-// Compute checksum
-const checksum = await invoke('compute_checksum', { 
-  app_handle: getCurrentWindow(),
-  file_path: '/home/user/document.pdf',
-  algorithm: algorithm
+const { hash } = await invoke('compute_checksum', {
+  filePath: '/home/user/document.pdf',
+  algorithm: 'SHA256',
 });
 
-console.log('SHA256:', checksum);
-// "a3b2c1d4e5f6..."
-
-// Clean up listener
 unlisten();
 ```
 
@@ -307,31 +219,23 @@ unlisten();
 | SHA256 | Medium | High | General purpose |
 | SHA512 | Slower | Highest | Security-sensitive |
 
-**Performance Notes**:
-- Progress reported in 5% increments
-- Large files may take considerable time
-- Memory usage is optimized for large files
-
 ## Event System
 
 ### Available Events
 
-```typescript
-// Extraction events
-'extract-progress'     // Progress during extraction
-'extract-complete'     // Extraction finished
-'extract-error'        // Extraction error
+| Event | Direction | Payload |
+|-------|-----------|---------|
+| `extract-progress` | backend to UI | `{ files, total, percentage }` |
+| `extract-complete` | backend to UI | none |
+| `extract-error` | backend to UI | error string |
+| `compress-progress` | backend to UI | `{ percentage, files_processed, current_file }` |
+| `compress-complete` | backend to UI | none |
+| `checksum-progress-{algorithm}` | backend to UI | percentage, in 5% steps (`{algorithm}` is lowercase, e.g. `sha256`) |
+| `file-open` | backend to UI | file path |
+| `frontend-ready` | UI to backend | none |
+| `{label}://ready` | progress window to backend | none |
 
-// Checksum events
-'checksum-progress-MD5'
-'checksum-complete-MD5'
-'checksum-error-MD5'
-'checksum-progress-SHA1'
-// ... (other algorithms)
-
-// File events
-'file-open'            // File opened in viewer
-```
+Extraction failures after the password check arrive only as `extract-error`, not as the `invoke` result.
 
 ### Event Listener Pattern
 
@@ -339,12 +243,11 @@ unlisten();
 import { listen } from '@tauri-apps/api/event';
 
 // General pattern
-const unlisten = await listen('event-name', (event) => {
-  const payload = event.payload;
-  // Handle event
+const unlisten = await listen('extract-progress', (event) => {
+  const { files, total, percentage } = event.payload;
 });
 
-// Clean up when component unmounts
+// Clean up when the component unmounts
 useEffect(() => {
   return () => unlisten();
 }, []);
@@ -352,46 +255,22 @@ useEffect(() => {
 
 ## Error Handling
 
-### Common Error Responses
+Commands return `Result<T, String>`, so the error reaches JavaScript as a plain string in the `invoke` rejection. There is no structured error object.
 
-```typescript
-// File not found
-{
-  error: "File not found",
-  details: "The specified file does not exist",
-  code: "ENOENT"
-}
-
-// Permission denied
-{
-  error: "Permission denied",
-  details: "Insufficient permissions to access file",
-  code: "EACCES"
-}
-
-// Corrupted archive
-{
-  error: "Archive corrupted",
-  details: "Unable to read archive structure",
-  code: "EARCHIVE"
-}
-```
-
-### Error Handling Pattern
+Password errors carry a prefix and are handled as described in [Passwords](#passwords).
 
 ```javascript
 try {
-  const result = await invoke('command_name', { param: 'value' });
-  // Handle success
+  await invoke('archive_file_details', { sourcePath: archivePath });
 } catch (error) {
-  console.error('Command failed:', error);
-  // Parse error if available
-  if (error.message) {
-    showErrorNotification(error.message);
+  const message = String(error);
+  if (message.startsWith('PASSWORD_REQUIRED:') || message.startsWith('INVALID_PASSWORD:')) {
+    // ask for the password
+  } else {
+    showErrorNotification(message);
   }
 }
 ```
-
 ## Performance Considerations
 
 ### Async Operations
