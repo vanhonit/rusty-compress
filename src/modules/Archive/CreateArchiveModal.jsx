@@ -228,20 +228,20 @@ const CreateArchiveModal = ({
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4"
+      className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100] p-4"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white rounded-xl shadow-2xl border-2 border-purple-100 max-w-xl w-full max-h-[90vh] flex flex-col">
+      <div className="bg-surface rounded-xl shadow-window border border-separator max-w-xl w-full max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-3 flex-shrink-0">
+        <div className="bg-surface-secondary px-4 py-3 flex-shrink-0 border-b border-separator">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-                <i className="ri-archive-add-line text-xl text-white"></i>
+              <div className="w-8 h-8 bg-surface-tertiary rounded-lg flex items-center justify-center">
+                <i className="ri-archive-add-line text-xl text-fg"></i>
               </div>
               <div>
-                <h2 className="text-base font-bold text-white">Create Archive</h2>
-                <p className="text-xs text-purple-100">
+                <h2 className="text-base font-bold text-fg">Create Archive</h2>
+                <p className="text-xs text-accent">
                   {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''}
                 </p>
               </div>
@@ -249,7 +249,7 @@ const CreateArchiveModal = ({
             <button
               onClick={onClose}
               disabled={isCreating}
-              className="text-white/80 hover:text-white transition-colors p-1 hover:bg-white/20 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              className="text-fg-secondary hover:text-fg transition-colors p-1 hover:bg-surface-tertiary rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
               title="Close"
             >
               <i className="ri-close-line text-lg"></i>
@@ -261,22 +261,22 @@ const CreateArchiveModal = ({
         <div className="p-4 space-y-4 overflow-y-auto flex-1">
           {/* Error Display */}
           {error && (
-            <div className="p-2.5 bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-lg flex flex-col gap-2">
+            <div className="p-2.5 bg-danger/10 border border-danger/40 rounded-lg flex flex-col gap-2">
               <div className="flex items-start gap-2">
-                <div className="w-5 h-5 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <i className="ri-alert-line text-xs text-red-600"></i>
+                <div className="w-5 h-5 bg-danger/10 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <i className="ri-alert-line text-xs text-danger"></i>
                 </div>
                 <div className="flex-1 overflow-auto max-h-32">
-                  <p className="text-xs text-red-700 whitespace-pre-wrap font-mono">{error}</p>
+                  <p className="text-xs text-danger whitespace-pre-wrap font-mono">{error}</p>
                 </div>
                 <button
                   onClick={() => setError(null)}
-                  className="text-red-500 hover:text-red-700 transition-colors p-1 hover:bg-red-100 rounded"
+                  className="text-danger hover:text-danger transition-colors p-1 hover:bg-danger/10 rounded"
                 >
                   <i className="ri-close-line text-sm"></i>
                 </button>
               </div>
-              <div className="text-xs text-red-600 bg-red-100 p-2 rounded">
+              <div className="text-xs text-danger bg-danger/10 p-2 rounded">
                 <strong>Tip:</strong> Check the browser console (F12) for more detailed error information
               </div>
             </div>
@@ -284,7 +284,7 @@ const CreateArchiveModal = ({
 
           {/* Archive Name */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+            <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wider mb-1 block">
               Archive Name
             </label>
             <input
@@ -292,14 +292,14 @@ const CreateArchiveModal = ({
               value={archiveName}
               onChange={(e) => setArchiveName(e.target.value)}
               disabled={isCreating}
-              className="w-full px-3 py-2 rounded-lg border-2 border-gray-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 rounded-lg border border-separator focus:border-accent focus:ring-2 focus:ring-accent/30 outline-none transition-all disabled:bg-surface-secondary disabled:cursor-not-allowed"
               placeholder="Enter archive name"
             />
           </div>
 
           {/* Format Selection */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+            <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wider mb-1 block">
               Archive Format
             </label>
             <div className="flex flex-wrap gap-2">
@@ -309,19 +309,19 @@ const CreateArchiveModal = ({
                   onClick={() => !isCreating && setArchiveFormat(format.value)}
                   disabled={isCreating}
                   className={`
-                    relative group px-3 py-2 rounded-lg border-2 transition-all duration-300 flex-1 min-w-[100px]
+                    relative group px-3 py-2 rounded-lg border transition-all duration-300 flex-1 min-w-[100px]
                     ${archiveFormat === format.value
-                      ? 'border-purple-400 bg-purple-50 shadow-md'
-                      : 'border-gray-200 bg-white hover:border-purple-300 hover:bg-purple-50/50'
+                      ? 'border-accent bg-accent/10'
+                      : 'border-separator bg-surface hover:bg-surface-tertiary'
                     }
                     disabled:opacity-50 disabled:cursor-not-allowed
                   `}
                 >
                   <div className="flex items-center justify-center gap-1.5">
-                    <i className={`ri-file-${format.value === '7z' ? 'zip' : format.value.replace('.', '-')}-line text-lg text-purple-600`}></i>
-                    <span className="font-semibold text-sm text-gray-800">{format.label}</span>
+                    <i className={`ri-file-${format.value === '7z' ? 'zip' : format.value.replace('.', '-')}-line text-lg text-accent`}></i>
+                    <span className="font-semibold text-sm text-fg">{format.label}</span>
                     {archiveFormat === format.value && (
-                      <i className="ri-check-line text-purple-600 text-sm"></i>
+                      <i className="ri-check-line text-accent text-sm"></i>
                     )}
                   </div>
                 </button>
@@ -331,7 +331,7 @@ const CreateArchiveModal = ({
 
           {/* Compression Level */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+            <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wider mb-1 block">
               Compression Level
             </label>
             <div className="flex items-center gap-3">
@@ -342,10 +342,10 @@ const CreateArchiveModal = ({
                 value={compressionLevel}
                 onChange={(e) => setCompressionLevel(parseInt(e.target.value))}
                 disabled={isCreating}
-                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-purple-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 h-2 bg-surface-tertiary rounded-lg appearance-none cursor-pointer accent-accent disabled:opacity-50 disabled:cursor-not-allowed"
               />
-              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                <span className="text-base font-bold text-purple-700">{compressionLevel}</span>
+              <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
+                <span className="text-base font-bold text-accent">{compressionLevel}</span>
               </div>
             </div>
             <div className="flex gap-1.5 mt-2">
@@ -355,10 +355,10 @@ const CreateArchiveModal = ({
                   onClick={() => !isCreating && setCompressionLevel(preset.value)}
                   disabled={isCreating}
                   className={`
-                    flex-1 px-2 py-1.5 rounded-lg border-2 text-xs font-medium transition-all duration-300
+                    flex-1 px-2 py-1.5 rounded-lg border text-xs font-medium transition-all duration-300
                     ${compressionLevel === preset.value
-                      ? 'border-purple-400 bg-purple-600 text-white'
-                      : 'border-gray-200 text-gray-700 hover:border-purple-300 hover:bg-purple-50'
+                      ? 'border-accent bg-accent text-accent-fg'
+                      : 'border-separator text-fg hover:bg-surface-tertiary'
                     }
                     disabled:opacity-50 disabled:cursor-not-allowed
                   `}
@@ -372,7 +372,7 @@ const CreateArchiveModal = ({
 
           {/* Destination Folder */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+            <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wider mb-1 block">
               Destination Folder
             </label>
             <div className="flex gap-2">
@@ -381,13 +381,13 @@ const CreateArchiveModal = ({
                 value={destinationFolder}
                 onChange={(e) => setDestinationFolder(e.target.value)}
                 disabled={isCreating}
-                className="flex-1 px-3 py-2 rounded-lg border-2 border-gray-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="flex-1 px-3 py-2 rounded-lg border border-separator focus:border-accent focus:ring-2 focus:ring-accent/30 outline-none transition-all disabled:bg-surface-secondary disabled:cursor-not-allowed"
                 placeholder="Select destination folder"
               />
               <button
                 onClick={handleBrowseDestination}
                 disabled={isCreating}
-                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg border-2 border-gray-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-2 bg-surface-secondary hover:bg-surface-tertiary text-fg rounded-lg border border-separator transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Browse"
               >
                 <i className="ri-folder-open-line text-base"></i>
@@ -397,18 +397,18 @@ const CreateArchiveModal = ({
 
           {/* File List Preview */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+            <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wider mb-1 block">
               Files to Archive ({selectedFiles.length})
             </label>
-            <div className="max-h-24 overflow-y-auto bg-gray-50 rounded-lg border-2 border-gray-200 p-2 space-y-1">
+            <div className="max-h-24 overflow-y-auto bg-surface-secondary rounded-lg border border-separator p-2 space-y-1">
               {selectedFiles.slice(0, 5).map((file, index) => (
-                <div key={index} className="flex items-center gap-2 text-xs text-gray-700 truncate">
-                  <i className="ri-file-line text-gray-400 flex-shrink-0 text-sm"></i>
+                <div key={index} className="flex items-center gap-2 text-xs text-fg truncate">
+                  <i className="ri-file-line text-fg-tertiary flex-shrink-0 text-sm"></i>
                   <span className="truncate">{file}</span>
                 </div>
               ))}
               {selectedFiles.length > 5 && (
-                <div className="text-xs text-gray-500 text-center py-1">
+                <div className="text-xs text-fg-secondary text-center py-1">
                   ... and {selectedFiles.length - 5} more files
                 </div>
               )}
@@ -417,19 +417,19 @@ const CreateArchiveModal = ({
         </div>
 
         {/* Footer */}
-        <div className="bg-gray-50 border-t border-gray-200 px-4 py-3 flex-shrink-0">
+        <div className="bg-surface-secondary border-t border-separator px-4 py-3 flex-shrink-0">
           <div className="flex justify-end gap-2">
             <button
               onClick={onClose}
               disabled={isCreating}
-              className="px-4 py-2 bg-white border-2 border-gray-300 text-gray-700 rounded-lg font-medium text-sm hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-surface border border-separator text-fg rounded-lg font-medium text-sm hover:bg-surface-secondary hover:border-separator transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               onClick={handleCreateArchive}
               disabled={isCreating}
-              className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg font-medium text-sm hover:from-purple-600 hover:to-pink-700 hover:shadow-lg hover:shadow-purple-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+              className="px-4 py-2 bg-accent text-accent-fg rounded-lg font-medium text-sm hover:bg-accent/15 hover:shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
               {isCreating ? (
                 <>

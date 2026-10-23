@@ -35,6 +35,14 @@ function isArchiveFile(fileName) {
   return archiveExtensions.some((ext) => lower.endsWith(ext));
 }
 
+function isPasswordError(errorMsg) {
+  const msg = (errorMsg || '').toLowerCase();
+  return msg.includes('password') ||
+         msg.includes('encrypted') ||
+         msg.includes('protected') ||
+         msg.startsWith('password_required:');
+}
+
 const FileManager = () => {
   // Prevents React StrictMode from running the initial load effect twice
   const initDone = React.useRef(false);
@@ -56,9 +64,11 @@ const FileManager = () => {
   const [checksumFilePath, setChecksumFilePath] = useState(null);
   const [propertiesFile, setPropertiesFile] = useState(null);
   const [showCreateArchiveModal, setShowCreateArchiveModal] = useState(false);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [passwordError, setPasswordError] = useState(null);
-  const [currentExtraction, setCurrentExtraction] = useState(null);
+  const [passwordModalState, setPasswordModalState] = useState({
+    isOpen: false,
+    error: null,
+    action: null,
+  });
 
   // Extract current tab data for easier access
   const currentTab = activeTab;
@@ -92,6 +102,7 @@ const FileManager = () => {
         currentPath: path,
         currentArchive: "",
         archivePath: "",
+        archivePassword: null,
         selectedFiles: [],
         searchQuery: "",
         title: dirName,
@@ -121,7 +132,7 @@ const FileManager = () => {
    * @param {string} internalPath – path inside the archive, e.g. "" | "folder/" | "a/b/"
    * @param {string} tabId – optional tab ID to load into
    */
-  const loadArchiveContents = async (archiveFile, internalPath = "", tabId = null) => {
+  const loadArchiveContents = async (archiveFile, internalPath = "", tabId = null, password = null) => {
     console.log("loadArchiveContents called with:", archiveFile, internalPath, tabId);
     const targetTabId = tabId || currentTab?.id;
     if (!targetTabId) return;
@@ -135,6 +146,7 @@ const FileManager = () => {
       const result = await invoke("archive_file_details", {
         sourcePath: archiveFile,
         filePath: internalPath || null,
+        password: password,
       });
       console.log("Archive contents loaded:", result);
 
@@ -153,14 +165,38 @@ const FileManager = () => {
         type: 'archive',
         isLoading: false,
         error: null,
+        archivePassword: password || null,
       });
+
+      // Close password modal if open (success after entering password)
+      if (passwordModalState.isOpen) {
+        setPasswordModalState({ isOpen: false, error: null, action: null });
+      }
     } catch (err) {
       console.error("loadArchiveContents error:", err);
-      updateTab(targetTabId, {
-        error: `Failed to load archive contents: ${err.message || err}`,
-        files: [],
-        isLoading: false,
-      });
+      const errorMsg = err.message || err;
+
+      if (isPasswordError(errorMsg) && !password) {
+        setPasswordModalState({
+          isOpen: true,
+          error: "This archive is password protected. Please enter the password to browse its contents.",
+          action: { type: 'browse', archivePath: archiveFile, internalPath, tabId: targetTabId },
+        });
+        updateTab(targetTabId, { isLoading: false });
+      } else if (isPasswordError(errorMsg) && password) {
+        // Wrong password
+        setPasswordModalState(prev => ({
+          ...prev,
+          error: "Incorrect password. Please try again.",
+        }));
+        updateTab(targetTabId, { isLoading: false });
+      } else {
+        updateTab(targetTabId, {
+          error: `Failed to load archive contents: ${errorMsg}`,
+          files: [],
+          isLoading: false,
+        });
+      }
     }
   };
 
@@ -178,7 +214,8 @@ const FileManager = () => {
     const archiveFile = currentTab?.currentArchive;
     if (!targetTabId || !archiveFile) return;
 
-    loadArchiveContents(archiveFile, internalPath, targetTabId);
+    const password = currentTab?.archivePassword || null;
+    loadArchiveContents(archiveFile, internalPath, targetTabId, password);
     updateTab(targetTabId, { searchQuery: "" });
   };
 
@@ -200,11 +237,21 @@ const FileManager = () => {
         try {
           await invoke("view_file_in_archive", {
             archivePath: tab.currentArchive,
-            fileName: file.path.replace(/\/$/, ""), // strip any accidental trailing slash
+            fileName: file.path.replace(/\/$/, ""),
+            password: tab.archivePassword || null,
           });
         } catch (err) {
           console.error("view_file_in_archive error:", err);
-          updateTab(targetTabId, { error: `Failed to view file: ${err.message || err}` });
+          const errorMsg = err.message || err;
+          if (isPasswordError(errorMsg) && !tab.archivePassword) {
+            setPasswordModalState({
+              isOpen: true,
+              error: "Password required to view this file.",
+              action: { type: 'browse', archivePath: tab.currentArchive, internalPath: tab.archivePath, tabId: targetTabId },
+            });
+          } else {
+            updateTab(targetTabId, { error: `Failed to view file: ${errorMsg}` });
+          }
         }
       }
     } else if (file.is_dir) {
@@ -292,41 +339,27 @@ const FileManager = () => {
     const filePaths =
       tab.selectedFiles.length > 0 ? tab.selectedFiles.map((f) => f.path) : null;
 
-    // Store extraction details for password handling
-    const extraction = {
-      archivePath: tab.currentArchive,
-      selectedFiles: filePaths,
-      outputPath,
-      tabId: targetTabId,
-    };
-    setCurrentExtraction(extraction);
+    const storedPassword = tab.archivePassword || null;
 
-    // Try extraction without password first
     updateTab(targetTabId, { isLoading: true, error: null });
-    setPasswordError(null);
 
     try {
       await invoke("extract_files", {
         archivePath: tab.currentArchive,
         selectedFiles: filePaths,
         outputPath,
-        password: null, // Try without password first
+        password: storedPassword,
       });
     } catch (err) {
       console.error("extract_files error:", err);
       const errorMsg = err.message || err;
 
-      // Check if error is password-related
-      if (
-        errorMsg.toLowerCase().includes("password") ||
-        errorMsg.toLowerCase().includes("encrypted") ||
-        errorMsg.toLowerCase().includes("protected")
-      ) {
-        // Show password modal
-        setShowPasswordModal(true);
-        setPasswordError(
-          "This archive is password protected. Please enter the correct password.",
-        );
+      if (isPasswordError(errorMsg)) {
+        setPasswordModalState({
+          isOpen: true,
+          error: "This archive is password protected. Please enter the correct password.",
+          action: { type: 'extract', archivePath: tab.currentArchive, selectedFiles: filePaths, outputPath, tabId: targetTabId },
+        });
       } else {
         updateTab(targetTabId, { error: `Failed to extract files: ${errorMsg}`, isLoading: false });
       }
@@ -349,37 +382,27 @@ const FileManager = () => {
     const filePaths =
       tab.selectedFiles.length > 0 ? tab.selectedFiles.map((f) => f.path) : null;
 
-    const extraction = {
-      archivePath: tab.currentArchive,
-      selectedFiles: filePaths,
-      outputPath,
-      tabId: targetTabId,
-    };
-    setCurrentExtraction(extraction);
+    const storedPassword = tab.archivePassword || null;
 
     updateTab(targetTabId, { isLoading: true, error: null });
-    setPasswordError(null);
 
     try {
       await invoke("extract_files", {
         archivePath: tab.currentArchive,
         selectedFiles: filePaths,
         outputPath,
-        password: null,
+        password: storedPassword,
       });
     } catch (err) {
       console.error("extractHere error:", err);
       const errorMsg = err.message || err;
 
-      if (
-        errorMsg.toLowerCase().includes("password") ||
-        errorMsg.toLowerCase().includes("encrypted") ||
-        errorMsg.toLowerCase().includes("protected")
-      ) {
-        setShowPasswordModal(true);
-        setPasswordError(
-          "This archive is password protected. Please enter the correct password.",
-        );
+      if (isPasswordError(errorMsg)) {
+        setPasswordModalState({
+          isOpen: true,
+          error: "This archive is password protected. Please enter the correct password.",
+          action: { type: 'extract', archivePath: tab.currentArchive, selectedFiles: filePaths, outputPath, tabId: targetTabId },
+        });
       } else {
         updateTab(targetTabId, { error: `Failed to extract files: ${errorMsg}`, isLoading: false });
       }
@@ -390,46 +413,45 @@ const FileManager = () => {
 
   // Handle password submission
   const handlePasswordSubmit = async (password) => {
-    if (!currentExtraction) return;
+    const { action } = passwordModalState;
+    if (!action) return;
 
-    setShowPasswordModal(true); // Keep modal open
-    setPasswordError(null);
+    setPasswordModalState(prev => ({ ...prev, error: null }));
 
-    try {
-      await invoke("extract_files", {
-        archivePath: currentExtraction.archivePath,
-        selectedFiles: currentExtraction.selectedFiles,
-        outputPath: currentExtraction.outputPath,
-        password: password, // Try with provided password
-      });
-
-      // If successful, close password modal
-      setShowPasswordModal(false);
-      setCurrentExtraction(null);
-    } catch (err) {
-      console.error("extract_files with password error:", err);
-      const errorMsg = err.message || err;
-
-      if (
-        errorMsg.toLowerCase().includes("password") ||
-        errorMsg.toLowerCase().includes("incorrect")
-      ) {
-        // Password was wrong, show error in modal
-        setPasswordError("Incorrect password. Please try again.");
-      } else {
-        // Other error
-        setShowPasswordModal(false);
-        setError(`Failed to extract files: ${errorMsg}`);
-        setCurrentExtraction(null);
+    if (action.type === 'browse') {
+      await loadArchiveContents(action.archivePath, action.internalPath, action.tabId, password);
+    } else if (action.type === 'extract') {
+      try {
+        await invoke("extract_files", {
+          archivePath: action.archivePath,
+          selectedFiles: action.selectedFiles,
+          outputPath: action.outputPath,
+          password: password,
+        });
+        if (action.tabId) {
+          updateTab(action.tabId, { archivePassword: password });
+        }
+        setPasswordModalState({ isOpen: false, error: null, action: null });
+      } catch (err) {
+        const errorMsg = err.message || err;
+        if (isPasswordError(errorMsg)) {
+          setPasswordModalState(prev => ({
+            ...prev,
+            error: "Incorrect password. Please try again.",
+          }));
+        } else {
+          setPasswordModalState({ isOpen: false, error: null, action: null });
+          if (action.tabId) {
+            updateTab(action.tabId, { error: `Failed to extract files: ${errorMsg}` });
+          }
+        }
       }
     }
   };
 
   // Handle password modal close
   const handlePasswordModalClose = () => {
-    setShowPasswordModal(false);
-    setPasswordError(null);
-    setCurrentExtraction(null);
+    setPasswordModalState({ isOpen: false, error: null, action: null });
   };
 
   // ── Show checksum modal for the current archive ────────────────────────────
@@ -810,35 +832,35 @@ const FileManager = () => {
   };
 
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 overflow-hidden flex flex-col">
+    <div className="h-screen bg-surface-secondary overflow-hidden flex flex-col">
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="shrink-0 bg-white/80 backdrop-blur-sm shadow-lg border-b border-blue-100 overflow-hidden">
-          <div className="px-4 py-2 sm:px-6 sm:py-4 bg-gradient-to-r from-blue-600 to-indigo-600">
+        <div className="shrink-0 bg-surface-tertiary shadow-sm border-b border-accent/40 overflow-hidden">
+          <div className="px-4 py-2 sm:px-6 sm:py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 sm:gap-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-                  <i className="ri-archive-2-line text-xl sm:text-2xl text-white"></i>
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-surface-tertiary rounded-lg flex items-center justify-center">
+                  <i className="ri-archive-2-line text-xl sm:text-2xl text-fg"></i>
                 </div>
                 <div>
-                  <h1 className="text-lg sm:text-xl font-bold text-white">
+                  <h1 className="text-lg sm:text-xl font-bold text-fg">
                     Rusty Compress
                   </h1>
-                  <p className="text-xs sm:text-sm text-blue-100">
+                  <p className="text-xs sm:text-sm text-accent">
                     Archive Manager
                   </p>
                 </div>
               </div>
-              <div className="hidden md:flex items-center gap-2 text-white/80 text-xs sm:text-sm">
-                <kbd className="px-2 py-1 bg-white/20 rounded text-xs font-mono backdrop-blur-sm">
+              <div className="hidden md:flex items-center gap-2 text-fg-secondary text-xs sm:text-sm">
+                <kbd className="px-2 py-1 bg-surface-tertiary rounded text-xs font-mono">
                   ⌘T
                 </kbd>
                 <span>New Tab</span>
-                <kbd className="px-2 py-1 bg-white/20 rounded text-xs font-mono backdrop-blur-sm">
+                <kbd className="px-2 py-1 bg-surface-tertiary rounded text-xs font-mono">
                   ⌘W
                 </kbd>
                 <span>Close Tab</span>
-                <kbd className="px-2 py-1 bg-white/20 rounded text-xs font-mono backdrop-blur-sm">
+                <kbd className="px-2 py-1 bg-surface-tertiary rounded text-xs font-mono">
                   ⌘1-9
                 </kbd>
                 <span>Switch Tabs</span>
@@ -856,7 +878,7 @@ const FileManager = () => {
 
         {/* Main Container */}
         {currentTab && (
-          <div className="flex-1 flex flex-col bg-white overflow-hidden">
+          <div className="flex-1 flex flex-col bg-surface overflow-hidden">
             {/* Toolbar */}
             <div className="shrink-0">
               <Toolbar
@@ -891,21 +913,21 @@ const FileManager = () => {
 
             {/* Error Display */}
             {currentTab.error && (
-              <div className="mx-4 my-4 p-3 sm:p-4 bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl flex items-start gap-2 sm:gap-3 shadow-sm animate-pulse shrink-0">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <i className="ri-alert-line text-base sm:text-lg text-red-600"></i>
+              <div className="mx-4 my-4 p-3 sm:p-4 bg-danger/10 border border-danger/40 rounded-xl flex items-start gap-2 sm:gap-3 shadow-sm shrink-0">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 bg-danger/10 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <i className="ri-alert-line text-base sm:text-lg text-danger"></i>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-xs sm:text-sm font-semibold text-red-800 mb-1">
+                  <h3 className="text-xs sm:text-sm font-semibold text-danger mb-1">
                     Error
                   </h3>
-                  <p className="text-xs sm:text-sm text-red-700 break-words">
+                  <p className="text-xs sm:text-sm text-danger break-words">
                     {currentTab.error}
                   </p>
                 </div>
                 <button
                   onClick={() => updateTab(currentTab.id, { error: null })}
-                  className="text-red-500 hover:text-red-700 transition-colors p-1 hover:bg-red-100 rounded flex-shrink-0"
+                  className="text-danger hover:text-danger transition-colors p-1 hover:bg-danger/10 rounded flex-shrink-0"
                   title="Dismiss"
                 >
                   <i className="ri-close-line text-base sm:text-xl"></i>
@@ -915,18 +937,18 @@ const FileManager = () => {
 
             {/* Loading Spinner */}
             {currentTab.isLoading && (
-              <div className="flex items-center justify-center py-10 sm:py-20 bg-gradient-to-b from-gray-50 to-white flex-1">
+              <div className="flex items-center justify-center py-10 sm:py-20 bg-surface-secondary flex-1">
                 <div className="text-center">
                   <div className="relative mb-4 sm:mb-6">
-                    <div className="absolute inset-0 bg-blue-100 rounded-full animate-ping opacity-20"></div>
-                    <div className="relative w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
-                      <i className="ri-refresh-line text-xl sm:text-2xl text-white animate-spin"></i>
+                    <div className="absolute inset-0 bg-accent/10 rounded-full opacity-20"></div>
+                    <div className="relative w-12 h-12 sm:w-16 sm:h-16 bg-accent rounded-full flex items-center justify-center shadow-sm">
+                      <i className="ri-refresh-line text-xl sm:text-2xl text-fg animate-spin"></i>
                     </div>
                   </div>
-                  <p className="text-gray-600 font-medium text-base sm:text-lg">
+                  <p className="text-fg-secondary font-medium text-base sm:text-lg">
                     Loading files...
                   </p>
-                  <p className="text-gray-400 text-xs sm:text-sm mt-1">
+                  <p className="text-fg-tertiary text-xs sm:text-sm mt-1">
                     Please wait a moment
                   </p>
                 </div>
@@ -943,6 +965,7 @@ const FileManager = () => {
                   onSelect={(file) => selectFile(file, currentTab.id)}
                   isLoading={currentTab.isLoading}
                   currentArchive={currentTab.currentArchive}
+                  archivePassword={currentTab.archivePassword || null}
                   onShowProperties={showProperties}
                   onCreateArchive={() => openCreateArchiveModal(currentTab.id)}
                 />
@@ -951,11 +974,11 @@ const FileManager = () => {
 
             {/* Status Bar */}
             {currentTab.files.length > 0 && (
-              <div className="shrink-0 bg-gradient-to-r from-gray-50 to-blue-50 border-t border-blue-200 px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between text-xs">
+              <div className="shrink-0 bg-surface-secondary border-t border-accent/40 px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2 sm:gap-4">
                   <div className="flex items-center gap-1 sm:gap-2">
-                    <i className="ri-file-list-3-line text-gray-500 text-sm sm:text-base"></i>
-                    <span className="text-gray-700 font-medium text-xs sm:text-sm">
+                    <i className="ri-file-list-3-line text-fg-secondary text-sm sm:text-base"></i>
+                    <span className="text-fg font-medium text-xs sm:text-sm">
                       {currentTab.searchQuery
                         ? `${filteredFiles.length} of ${currentTab.files.length}`
                         : `${currentTab.files.length}`}{" "}
@@ -964,35 +987,35 @@ const FileManager = () => {
                   </div>
                   {currentTab.selectedFiles.length > 0 && (
                     <div className="flex items-center gap-1 sm:gap-2">
-                      <span className="text-gray-300">|</span>
+                      <span className="text-fg-tertiary">|</span>
                       <div className="flex items-center gap-1 sm:gap-2">
-                        <i className="ri-checkbox-circle-line text-blue-500 text-sm sm:text-base"></i>
-                        <span className="text-blue-700 font-medium text-xs sm:text-sm">
+                        <i className="ri-checkbox-circle-line text-accent text-sm sm:text-base"></i>
+                        <span className="text-accent font-medium text-xs sm:text-sm">
                           {currentTab.selectedFiles.length} selected
                         </span>
                       </div>
                     </div>
                   )}
                 </div>
-                <div className="hidden sm:flex items-center gap-3 sm:gap-4 text-gray-500 text-xs sm:text-sm">
+                <div className="hidden sm:flex items-center gap-3 sm:gap-4 text-fg-secondary text-xs sm:text-sm">
                   <div className="flex items-center gap-1">
                     <i className="ri-mouse-line"></i>
                     <span>Click to select</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 bg-gray-200 rounded text-xs font-mono">
+                    <kbd className="px-1.5 py-0.5 bg-surface-tertiary rounded text-xs font-mono">
                       Enter
                     </kbd>
                     <span>to open</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 bg-gray-200 rounded text-xs font-mono">
+                    <kbd className="px-1.5 py-0.5 bg-surface-tertiary rounded text-xs font-mono">
                       Esc
                     </kbd>
                     <span>deselect</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 bg-gray-200 rounded text-xs font-mono">
+                    <kbd className="px-1.5 py-0.5 bg-surface-tertiary rounded text-xs font-mono">
                       ⌘N
                     </kbd>
                     <span>create archive</span>
@@ -1033,11 +1056,15 @@ const FileManager = () => {
 
       {/* Password Modal */}
       <PasswordModal
-        isOpen={showPasswordModal}
+        isOpen={passwordModalState.isOpen}
         onClose={handlePasswordModalClose}
         onSubmit={handlePasswordSubmit}
-        error={passwordError}
+        error={passwordModalState.error}
         isLoading={false}
+        subtitle={passwordModalState.action?.type === 'browse'
+          ? "Enter password to browse archive contents"
+          : "Enter password to extract files"}
+        buttonText={passwordModalState.action?.type === 'browse' ? "Unlock" : "Extract"}
       />
     </div>
   );

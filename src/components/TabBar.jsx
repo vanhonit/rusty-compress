@@ -100,7 +100,7 @@ const TabBar = () => {
         <button
           className="
             flex items-center justify-center w-8 h-8 rounded-lg ml-1 mr-1
-            text-slate-400 hover:text-blue-500 hover:bg-blue-50
+            text-fg-secondary hover:text-fg hover:bg-surface-tertiary
             select-none
           "
           onClick={handleNewTab}

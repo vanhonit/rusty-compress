@@ -56,18 +56,18 @@ function HashRow({ algo, filePath, onCopy, copiedField }) {
   return (
     <div
       className={`
-        border-2 rounded-xl p-3 sm:p-4 transition-all duration-300
-        ${hash ? "bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border-indigo-200 hover:border-indigo-300" : "bg-gradient-to-r from-gray-50 to-slate-50 border-gray-200"}
-        ${computing ? "border-blue-400 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-md shadow-blue-100" : "hover:shadow-lg"}
-        ${error ? "border-red-300 bg-gradient-to-r from-red-50 to-orange-50" : ""}
+        border rounded-xl p-3 sm:p-4 transition-all duration-300
+        bg-surface-secondary border-separator
+        ${computing ? "border-accent/50 bg-accent/10" : ""}
+        ${error ? "border-danger/40 bg-danger/10" : ""}
       `}
     >
       <div className="flex items-center justify-between mb-2 sm:mb-3">
         <div className="flex items-center gap-1 sm:gap-2">
-          <div className={`p-1 sm:p-1.5 rounded-lg ${hash ? 'bg-indigo-100' : 'bg-gray-100'} transition-colors`}>
-            <i className={`ri-shield-check-line ${hash ? 'text-indigo-600' : 'text-gray-500'} text-base sm:text-lg`}></i>
+          <div className={`p-1 sm:p-1.5 rounded-lg ${hash ? 'bg-accent/10' : 'bg-surface-tertiary'} transition-colors`}>
+            <i className={`ri-shield-check-line ${hash ? 'text-accent' : 'text-fg-secondary'} text-base sm:text-lg`}></i>
           </div>
-          <span className="text-xs sm:text-sm font-bold text-gray-700 uppercase tracking-wider">
+          <span className="text-xs sm:text-sm font-bold text-fg uppercase tracking-wider">
             {algo.label}
           </span>
         </div>
@@ -76,12 +76,11 @@ function HashRow({ algo, filePath, onCopy, copiedField }) {
             <button
               onClick={() => onCopy(hash, algo.key)}
               className={`
-                flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold
-                transition-all duration-300 border-2
+                flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition-all duration-300 border
                 ${
                   copiedField === algo.key
-                    ? "bg-green-100 text-green-700 border-green-300"
-                    : "bg-white text-gray-600 border-gray-200 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50"
+                    ? "bg-success/10 text-success border-success/40"
+                    : "bg-surface text-fg-secondary border-separator hover:text-fg hover:bg-surface-tertiary"
                 }
               `}
               title="Copy to clipboard"
@@ -105,19 +104,18 @@ function HashRow({ algo, filePath, onCopy, copiedField }) {
             onClick={compute}
             disabled={computing}
             className={`
-              flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold border-2
-              transition-all duration-300
+              flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold border transition-all duration-300
               ${
                 computing
-                  ? "bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-600 border-blue-300 cursor-wait"
-                  : "bg-gradient-to-r from-indigo-500 to-purple-600 text-white border-indigo-500 hover:from-indigo-600 hover:to-purple-700 hover:shadow-md active:scale-95"
+                  ? "bg-surface-tertiary text-fg-secondary border-separator cursor-wait"
+                  : "bg-accent text-accent-fg border-accent hover:bg-accent-hover"
               }
             `}
             title={`Compute ${algo.label} checksum`}
           >
             {computing ? (
               <>
-                <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 border-2 border-blue-300 border-t-blue-500 rounded-full animate-spin"></div>
+                <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 border border-accent/40 border-t-accent rounded-full animate-spin"></div>
                 <span className="font-semibold text-xs sm:text-xs">{progress}%</span>
               </>
             ) : (
@@ -133,9 +131,9 @@ function HashRow({ algo, filePath, onCopy, copiedField }) {
 
       {/* Progress bar while computing */}
       {computing && (
-        <div className="w-full h-1.5 sm:h-2 bg-gray-200 rounded-full overflow-hidden mb-2 sm:mb-3">
+        <div className="w-full h-1.5 sm:h-2 bg-surface-tertiary rounded-full overflow-hidden mb-2 sm:mb-3">
           <div
-            className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600 rounded-full transition-all duration-500 ease-out shadow-md shadow-indigo-300"
+            className="h-full bg-accent rounded-full transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
           ></div>
         </div>
@@ -143,9 +141,9 @@ function HashRow({ algo, filePath, onCopy, copiedField }) {
 
       {/* Hash value or placeholder */}
       {hash && !computing && (
-        <div className="bg-white rounded-lg p-2 sm:p-3 border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-surface rounded-lg p-2 sm:p-3 border border-separator overflow-hidden">
           <p
-            className="text-xs sm:text-sm font-mono text-gray-800 break-all leading-tight sm:leading-relaxed select-all"
+            className="text-xs sm:text-sm font-mono text-fg break-all leading-tight sm:leading-relaxed select-all"
             title={hash}
           >
             {hash}
@@ -153,14 +151,14 @@ function HashRow({ algo, filePath, onCopy, copiedField }) {
         </div>
       )}
       {error && !computing && (
-        <div className="bg-red-50 rounded-lg p-2 sm:p-3 border border-red-200">
-          <p className="text-xs sm:text-sm text-red-600 font-medium">{error}</p>
+        <div className="bg-danger/10 rounded-lg p-2 sm:p-3 border border-danger/40">
+          <p className="text-xs sm:text-sm text-danger font-medium">{error}</p>
         </div>
       )}
       {!hash && !computing && !error && (
-        <div className="text-center py-3 sm:py-4 bg-white rounded-lg border border-dashed border-gray-300">
-          <i className="ri-cursor-line text-xl sm:text-2xl text-gray-300 mb-1 sm:mb-2"></i>
-          <p className="text-xs sm:text-sm text-gray-400">
+        <div className="text-center py-3 sm:py-4 bg-surface rounded-lg border border-dashed border-separator">
+          <i className="ri-cursor-line text-xl sm:text-2xl text-fg-tertiary mb-1 sm:mb-2"></i>
+          <p className="text-xs sm:text-sm text-fg-tertiary">
             Click Compute to generate {algo.label} hash
           </p>
         </div>
@@ -194,24 +192,24 @@ function ChecksumModal({ filePath, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl border border-blue-100 w-full max-w-md sm:max-w-lg mx-4 max-h-[90vh] flex flex-col overflow-hidden"
+        className="bg-surface rounded-xl shadow-window border border-separator w-full max-w-md sm:max-w-lg mx-4 max-h-[90vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-5 bg-gradient-to-r from-indigo-600 to-purple-600 border-b border-indigo-200">
+        <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-5 bg-surface-secondary border-b border-separator">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-4">
-              <div className="w-8 h-8 sm:w-12 sm:h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-lg">
-                <i className="ri-shield-check-line text-lg sm:text-2xl text-white"></i>
+              <div className="w-8 h-8 sm:w-12 sm:h-12 bg-surface-tertiary rounded-xl flex items-center justify-center shadow-sm">
+                <i className="ri-shield-check-line text-lg sm:text-2xl text-fg"></i>
               </div>
               <div className="min-w-0">
-                <h2 className="text-base sm:text-xl font-bold text-white">Checksum</h2>
+                <h2 className="text-base sm:text-xl font-bold text-fg">Checksum</h2>
                 <p
-                  className="text-xs sm:text-sm text-blue-100 truncate max-w-[150px] sm:max-w-[300px]"
+                  className="text-xs sm:text-sm text-accent truncate max-w-[150px] sm:max-w-[300px]"
                   title={filePath}
                 >
                   {fileName}
@@ -220,7 +218,7 @@ function ChecksumModal({ filePath, onClose }) {
             </div>
             <button
               onClick={onClose}
-              className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors"
+              className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-fg-secondary hover:text-fg hover:bg-surface-tertiary transition-colors"
               title="Close"
             >
               <i className="ri-close-line text-base sm:text-xl"></i>
@@ -229,7 +227,7 @@ function ChecksumModal({ filePath, onClose }) {
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-5 space-y-2 sm:space-y-4 bg-gradient-to-b from-gray-50 to-white">
+        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-5 space-y-2 sm:space-y-4 bg-surface-secondary">
           {ALGORITHMS.map((algo) => (
             <HashRow
               key={algo.key}
@@ -242,16 +240,16 @@ function ChecksumModal({ filePath, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 bg-gradient-to-r from-indigo-50 to-purple-50 border-t border-indigo-200">
+        <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 bg-accent/10 border-t border-accent/40">
           <div className="flex items-center justify-between gap-2 sm:gap-4">
-            <p className="text-xs sm:text-sm text-gray-600 flex-1">
-              <i className="ri-information-line mr-1 sm:mr-1.5 text-indigo-500"></i>
+            <p className="text-xs sm:text-sm text-fg-secondary flex-1">
+              <i className="ri-information-line mr-1 sm:mr-1.5 text-accent"></i>
               <span className="hidden sm:inline">Click Compute on the algorithm you need</span>
               <span className="sm:hidden">Click Compute on algorithm</span>
             </p>
             <button
               onClick={onClose}
-              className="px-4 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-gray-200 to-gray-300 text-gray-700 rounded-xl text-xs sm:text-sm font-bold hover:from-gray-300 hover:to-gray-400 transition-all duration-300 shadow-md hover:shadow-lg shrink-0"
+              className="px-4 sm:px-5 py-2 sm:py-2.5 bg-surface-secondary text-fg rounded-xl text-xs sm:text-sm font-bold hover:bg-surface-tertiary transition-all duration-300 shadow-sm hover:shadow-sm shrink-0"
             >
               Close
             </button>

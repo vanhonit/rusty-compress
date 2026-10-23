@@ -9,32 +9,32 @@ const getFileIcon = (extension, isDir) => {
   const iconClassName = "text-xl";
 
   if (isDir) {
-    return <i className={`ri-folder-fill ${iconClassName} text-blue-600`}></i>;
+    return <i className={`ri-folder-fill ${iconClassName} text-accent`}></i>;
   }
 
   // Archive files
   if (
     ["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz", "tbz2"].includes(ext)
   ) {
-    return <i className={`ri-file-zip-line ${iconClassName} text-red-600`}></i>;
+    return <i className={`ri-file-zip-line ${iconClassName} text-danger`}></i>;
   }
 
   // PDF
   if (ext === "pdf") {
-    return <i className={`ri-file-pdf-line ${iconClassName} text-red-700`}></i>;
+    return <i className={`ri-file-pdf-line ${iconClassName} text-danger`}></i>;
   }
 
   // Word documents
   if (["doc", "docx", "odt"].includes(ext)) {
     return (
-      <i className={`ri-file-word-line ${iconClassName} text-blue-700`}></i>
+      <i className={`ri-file-word-line ${iconClassName} text-accent`}></i>
     );
   }
 
   // Spreadsheets
   if (["xls", "xlsx", "csv", "ods"].includes(ext)) {
     return (
-      <i className={`ri-file-excel-line ${iconClassName} text-green-700`}></i>
+      <i className={`ri-file-excel-line ${iconClassName} text-success`}></i>
     );
   }
 
@@ -42,7 +42,7 @@ const getFileIcon = (extension, isDir) => {
   if (["ppt", "pptx", "odp"].includes(ext)) {
     return (
       <i
-        className={`ri-presentation-2-line ${iconClassName} text-orange-700`}
+        className={`ri-presentation-2-line ${iconClassName} text-warning`}
       ></i>
     );
   }
@@ -50,7 +50,7 @@ const getFileIcon = (extension, isDir) => {
   // Text files
   if (["txt", "md", "log", "cfg", "conf", "ini"].includes(ext)) {
     return (
-      <i className={`ri-file-text-line ${iconClassName} text-gray-700`}></i>
+      <i className={`ri-file-text-line ${iconClassName} text-fg`}></i>
     );
   }
 
@@ -72,7 +72,7 @@ const getFileIcon = (extension, isDir) => {
       "xml",
     ].includes(ext)
   ) {
-    return <i className={`ri-code-line ${iconClassName} text-purple-700`}></i>;
+    return <i className={`ri-code-line ${iconClassName} text-accent`}></i>;
   }
 
   // Image files
@@ -90,7 +90,7 @@ const getFileIcon = (extension, isDir) => {
       "webp",
     ].includes(ext)
   ) {
-    return <i className={`ri-image-line ${iconClassName} text-yellow-600`}></i>;
+    return <i className={`ri-image-line ${iconClassName} text-warning`}></i>;
   }
 
   // Audio files
@@ -100,7 +100,7 @@ const getFileIcon = (extension, isDir) => {
     )
   ) {
     return (
-      <i className={`ri-music-2-line ${iconClassName} text-indigo-600`}></i>
+      <i className={`ri-music-2-line ${iconClassName} text-accent`}></i>
     );
   }
 
@@ -119,18 +119,18 @@ const getFileIcon = (extension, isDir) => {
       "mov",
     ].includes(ext)
   ) {
-    return <i className={`ri-movie-2-line ${iconClassName} text-pink-600`}></i>;
+    return <i className={`ri-movie-2-line ${iconClassName} text-accent`}></i>;
   }
 
   // Binary/Executable files
   if (["exe", "dll", "bin", "app", "dmg", "apk"].includes(ext)) {
     return (
-      <i className={`ri-terminal-box-line ${iconClassName} text-gray-800`}></i>
+      <i className={`ri-terminal-box-line ${iconClassName} text-fg`}></i>
     );
   }
 
   // Default file icon
-  return <i className={`ri-file-line ${iconClassName} text-gray-600`}></i>;
+  return <i className={`ri-file-line ${iconClassName} text-fg-secondary`}></i>;
 };
 
 // A utility function to get the icon for a file type
@@ -172,6 +172,7 @@ const FileItem = ({
   onSelect,
   onOpenFile,
   currentArchive,
+  archivePassword,
   onShowProperties,
   onCreateArchive,
 }) => {
@@ -214,6 +215,7 @@ const FileItem = ({
       invoke("get_image_preview", {
         archivePath: currentArchive,
         filePath: file.path.replace(/\/$/, ""),
+        password: archivePassword || null,
       })
         .then((data) => {
           setPreviewImage(data);
@@ -226,7 +228,7 @@ const FileItem = ({
     } else {
       setPreviewImage(null);
     }
-  }, [showPreview, file, currentArchive, isImage]);
+  }, [showPreview, file, currentArchive, archivePassword, isImage]);
 
   // Handle checkbox click
   const handleCheckboxClick = (e) => {
@@ -268,26 +270,24 @@ const FileItem = ({
   // Alternating row colors
   const isEven = index % 2 === 0;
   const bgClass = selected
-    ? "bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50"
+    ? "bg-accent/10"
     : isEven
-      ? "bg-white"
-      : "bg-gray-50";
+      ? "bg-surface"
+      : "bg-surface-secondary";
 
   return (
     <>
       <div
         className={`
-          flex items-center px-4 sm:px-6 py-2.5 sm:py-3.5 border-b border-gray-100
-          cursor-pointer transition-all duration-300 ease-in-out
+          flex items-center px-4 sm:px-6 py-2.5 sm:py-3.5 border-b border-separator cursor-pointer transition-all duration-300 ease-in-out
           ${bgClass}
           ${
             selected
-              ? "border-l-3 sm:border-l-4 border-l-blue-500 shadow-md"
-              : "border-l-3 sm:border-l-4 border-l-transparent hover:border-l-blue-200"
+              ? "border-l-3 sm:border-l-4 border-l-accent"
+              : "border-l-3 sm:border-l-4 border-l-transparent"
           }
           ${isOpening ? "opacity-60 pointer-events-none" : ""}
-          hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50
-          hover:shadow-lg hover:z-10 hover:-translate-y-px
+          hover:bg-accent/15 hover:shadow-sm hover:z-10
         `}
         onClick={handleRowClick}
         onDoubleClick={handleDoubleClick}
@@ -300,17 +300,16 @@ const FileItem = ({
           <div
             onClick={handleCheckboxClick}
             className={`
-              relative w-4 h-4 sm:w-5 sm:h-5 rounded-lg border-2 flex items-center justify-center
-              transition-all duration-300 cursor-pointer
+              relative w-4 h-4 sm:w-5 sm:h-5 rounded-lg border flex items-center justify-center transition-all duration-300 cursor-pointer
               ${
                 selected
-                  ? "bg-gradient-to-br from-blue-500 to-blue-600 border-blue-500 shadow-md"
-                  : "bg-white border-gray-300 hover:border-blue-400 hover:shadow-sm"
+                  ? "bg-accent border-accent"
+                  : "bg-surface border-fg-tertiary hover:border-fg-secondary"
               }
             `}
           >
             {selected && (
-              <i className="ri-check-line text-white text-xs sm:text-sm relative z-10"></i>
+              <i className="ri-check-line text-fg text-xs sm:text-sm relative z-10"></i>
             )}
           </div>
         </div>
@@ -331,8 +330,8 @@ const FileItem = ({
               ref={fileNameRef}
               className={`
                 text-xs sm:text-sm font-medium truncate
-                ${selected ? "text-blue-900" : "text-gray-800"}
-                group-hover:text-blue-700
+                text-fg
+                group-hover:text-accent
               `}
               data-tooltip-content={file.name}
               data-tooltip-id={`tooltip-${file.path}-${index}`}
@@ -351,7 +350,7 @@ const FileItem = ({
 
           {/* File type badge for selected items */}
           {selected && !file.is_dir && (
-            <span className="ml-1 sm:ml-2 px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700 text-xs font-bold rounded-full shadow-sm border border-blue-200">
+            <span className="ml-1 sm:ml-2 px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-accent/10 text-accent text-xs font-bold rounded-full shadow-sm border border-accent/40">
               {fileExtension.toUpperCase()}
             </span>
           )}
@@ -360,7 +359,7 @@ const FileItem = ({
         {/* Date Modified Column */}
         <div className="w-24 sm:w-40 hidden md:block">
           <p
-            className={`text-xs font-medium ${selected ? "text-blue-800" : "text-gray-500"}`}
+            className={`text-xs font-medium ${selected ? "text-fg" : "text-fg-secondary"}`}
           >
             {file.last_modified}
           </p>
@@ -369,7 +368,7 @@ const FileItem = ({
         {/* Type Column */}
         <div className="w-20 sm:w-32 hidden lg:block">
           <p
-            className={`text-xs font-medium truncate ${selected ? "text-blue-800" : "text-gray-500"}`}
+            className={`text-xs font-medium truncate ${selected ? "text-fg" : "text-fg-secondary"}`}
             title={applicationName}
           >
             {applicationName}
@@ -379,10 +378,10 @@ const FileItem = ({
         {/* Size Column */}
         <div className="w-16 sm:w-28 text-right">
           <span
-            className={`text-xs sm:text-sm font-bold ${selected ? "text-blue-900" : "text-gray-600"}`}
+            className={`text-xs sm:text-sm font-bold ${selected ? "text-fg" : "text-fg-secondary"}`}
           >
             {file.is_dir ? (
-              <span className="text-gray-400 text-xs font-medium">—</span>
+              <span className="text-fg-tertiary text-xs font-medium">—</span>
             ) : (
               formatFileSize(file.size)
             )}
@@ -392,12 +391,12 @@ const FileItem = ({
         {/* Loading or Selection indicator */}
         {isOpening && (
           <div className="ml-2 sm:ml-3 flex-shrink-0">
-            <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 border-2 border-blue-300 border-t-blue-500 rounded-full animate-spin"></div>
+            <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 border border-accent/40 border-t-accent rounded-full animate-spin"></div>
           </div>
         )}
         {!isOpening && selected && (
           <div className="ml-2 sm:ml-3 flex-shrink-0">
-            <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full animate-pulse shadow-md"></div>
+            <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-accent rounded-full"></div>
           </div>
         )}
       </div>
@@ -405,32 +404,32 @@ const FileItem = ({
       {/* Image Preview on Hover */}
       {showPreview && isImage && !file.is_dir && (
         <div className="fixed z-50 pointer-events-none transform -translate-x-1/2 left-1/2 top-24">
-          <div className="bg-white rounded-2xl shadow-2xl border-2 border-blue-200 p-3 max-w-md backdrop-blur-sm bg-white/95">
+          <div className="bg-surface rounded-xl shadow-window border border-separator p-3 max-w-md">
             <div className="flex items-center justify-between mb-2 px-2">
               <div className="flex items-center gap-2">
-                <i className="ri-image-line text-blue-500"></i>
-                <span className="text-xs font-bold text-gray-800">Preview</span>
+                <i className="ri-image-line text-accent"></i>
+                <span className="text-xs font-bold text-fg">Preview</span>
               </div>
-              <span className="text-xs text-gray-500 truncate max-w-[200px]" title={file.name}>
+              <span className="text-xs text-fg-secondary truncate max-w-[200px]" title={file.name}>
                 {file.name}
               </span>
             </div>
-            <div className="bg-gradient-to-br from-gray-50 to-blue-50 rounded-xl flex items-center justify-center p-6 max-h-72 min-h-[200px]">
+            <div className="bg-surface-secondary rounded-xl flex items-center justify-center p-6 max-h-72 min-h-[200px]">
               {previewLoading ? (
-                <div className="text-gray-400 text-sm flex flex-col items-center">
-                  <div className="w-10 h-10 border-3 border-blue-200 border-t-blue-500 rounded-full animate-spin mb-3"></div>
-                  <p className="text-sm font-medium text-gray-600">Loading preview...</p>
+                <div className="text-fg-tertiary text-sm flex flex-col items-center">
+                  <div className="w-10 h-10 border border-accent/40 border-t-accent rounded-full animate-spin mb-3"></div>
+                  <p className="text-sm font-medium text-fg-secondary">Loading preview...</p>
                 </div>
               ) : previewImage ? (
                 <img
                   src={previewImage}
                   alt={file.name}
-                  className="max-w-full max-h-72 rounded-lg object-contain shadow-md"
+                  className="max-w-full max-h-72 rounded-lg object-contain shadow-sm"
                 />
               ) : (
-                <div className="text-gray-400 text-sm flex flex-col items-center">
-                  <i className="ri-image-line text-5xl mx-auto text-gray-300 mb-2"></i>
-                  <p className="text-xs text-gray-500">Unable to load preview</p>
+                <div className="text-fg-tertiary text-sm flex flex-col items-center">
+                  <i className="ri-image-line text-5xl mx-auto text-fg-tertiary mb-2"></i>
+                  <p className="text-xs text-fg-secondary">Unable to load preview</p>
                 </div>
               )}
             </div>
@@ -441,7 +440,7 @@ const FileItem = ({
       {/* Context Menu */}
       {showContextMenu && (
         <div
-          className="fixed z-50 bg-white rounded-2xl shadow-2xl border-2 border-blue-100 py-2 min-w-[220px] overflow-hidden"
+          className="fixed z-50 bg-surface rounded-xl shadow-window border border-separator py-2 min-w-[220px] overflow-hidden"
           style={{
             left: `${contextMenuPosition.x}px`,
             top: `${contextMenuPosition.y}px`,
@@ -453,9 +452,9 @@ const FileItem = ({
               onOpenFile(file);
               setShowContextMenu(false);
             }}
-            className="w-full px-4 py-3 text-left text-sm hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 hover:text-blue-700 flex items-center gap-3 transition-all duration-200"
+            className="w-full px-4 py-3 text-left text-sm hover:bg-accent/15 hover:text-accent flex items-center gap-3 transition-all duration-200"
           >
-            <i className="ri-eye-line text-blue-500"></i>
+            <i className="ri-eye-line text-accent"></i>
             <span className="font-medium">Open</span>
           </button>
           <button
@@ -463,9 +462,9 @@ const FileItem = ({
               onShowProperties(file);
               setShowContextMenu(false);
             }}
-            className="w-full px-4 py-3 text-left text-sm hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 hover:text-blue-700 flex items-center gap-3 transition-all duration-200"
+            className="w-full px-4 py-3 text-left text-sm hover:bg-accent/15 hover:text-accent flex items-center gap-3 transition-all duration-200"
           >
-            <i className="ri-file-info-line text-indigo-500"></i>
+            <i className="ri-file-info-line text-accent"></i>
             <span className="font-medium">Properties</span>
           </button>
           {onCreateArchive && (
@@ -474,9 +473,9 @@ const FileItem = ({
                 onCreateArchive(file);
                 setShowContextMenu(false);
               }}
-              className="w-full px-4 py-3 text-left text-sm hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 hover:text-purple-700 flex items-center gap-3 transition-all duration-200"
+              className="w-full px-4 py-3 text-left text-sm hover:bg-accent/15 hover:text-accent flex items-center gap-3 transition-all duration-200"
             >
-              <i className="ri-archive-add-line text-purple-500"></i>
+              <i className="ri-archive-add-line text-accent"></i>
               <span className="font-medium">Create Archive</span>
             </button>
           )}

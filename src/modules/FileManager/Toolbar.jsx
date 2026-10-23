@@ -16,20 +16,18 @@ function ToolbarButton({
       disabled={disabled}
       title={title}
       className={`
-        relative flex flex-col items-center justify-center gap-0.5
-        px-2 sm:px-2.5 py-1.5 sm:py-2 rounded-lg min-w-[40px]
-        transition-all duration-150 select-none
+        relative flex flex-col items-center justify-center gap-0.5 px-2 sm:px-2.5 py-1.5 sm:py-2 rounded-lg min-w-[40px] transition-all duration-150 select-none
         ${
           disabled
-            ? "text-white/35 cursor-not-allowed"
-            : "text-white hover:bg-white/20 active:bg-white/30 active:scale-95 cursor-pointer"
+            ? "text-fg-tertiary cursor-not-allowed"
+            : "text-fg-secondary hover:bg-surface-tertiary hover:text-fg rounded-mac cursor-pointer"
         }
       `}
     >
       <div className="relative">
         <i className={`${icon} text-lg sm:text-xl leading-none`}></i>
         {badge != null && badge > 0 && (
-          <span className="absolute -top-1.5 -right-2 min-w-[14px] px-1 bg-white text-blue-600 text-[9px] font-bold rounded-full leading-[14px] text-center shadow-sm">
+          <span className="absolute -top-1.5 -right-2 min-w-[14px] px-1 bg-accent text-accent-fg text-[9px] font-bold rounded-full leading-[14px] text-center shadow-sm">
             {badge > 99 ? "99+" : badge}
           </span>
         )}
@@ -38,7 +36,7 @@ function ToolbarButton({
         {label}
       </span>
       {shortcut && !disabled && (
-        <kbd className="absolute -top-1 -right-1 px-1 bg-white/30 text-white text-[8px] font-bold rounded shadow-sm leading-[11px]">
+        <kbd className="absolute -top-1 -right-1 px-1 bg-surface-tertiary text-fg text-[8px] font-bold rounded shadow-sm leading-[11px]">
           {shortcut}
         </kbd>
       )}
@@ -49,7 +47,7 @@ function ToolbarButton({
 // ── Vertical divider between button groups ────────────────────────────────
 function ToolbarDivider() {
   return (
-    <div className="w-px h-7 sm:h-8 bg-white/20 mx-0.5 sm:mx-1 flex-shrink-0" />
+    <div className="w-px h-7 sm:h-8 bg-separator mx-0.5 sm:mx-1 flex-shrink-0" />
   );
 }
 
@@ -87,7 +85,7 @@ function Toolbar({
   const hasSearch = searchQuery && searchQuery.trim().length > 0;
 
   return (
-    <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-2 sm:px-3 py-1 sm:py-1.5 shadow-lg">
+    <div className="bg-surface-secondary px-2 sm:px-3 py-1 sm:py-1.5 border-b border-separator">
       <div className="flex items-center gap-0.5 sm:gap-1">
         {/* ── Group 1: Open ──────────────────────────────────────── */}
         <ToolbarButton
@@ -171,7 +169,7 @@ function Toolbar({
         <div className="flex-1 mx-1.5 sm:mx-2 min-w-0">
           <div className="relative group">
             <div className="absolute inset-y-0 left-0 pl-2 sm:pl-2.5 flex items-center pointer-events-none">
-              <i className="ri-search-line text-white/60 text-sm group-focus-within:text-white transition-colors"></i>
+              <i className="ri-search-line text-fg-secondary text-sm group-focus-within:text-fg transition-colors"></i>
             </div>
             <input
               type="text"
@@ -182,7 +180,7 @@ function Toolbar({
                 setLocalSearchQuery(v);
                 onSearchChange && onSearchChange(v);
               }}
-              className="w-full pl-7 sm:pl-8 pr-7 sm:pr-8 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs sm:text-sm placeholder-white/50 focus:outline-none focus:bg-white/20 focus:border-white/40 transition-all backdrop-blur-sm"
+              className="w-full pl-7 sm:pl-8 pr-7 sm:pr-8 py-1.5 rounded-lg bg-surface-tertiary border border-separator text-fg text-xs sm:text-sm placeholder:text-fg-tertiary focus:outline-none focus:bg-surface-tertiary focus:border-separator transition-all"
             />
             {hasSearch && (
               <button
@@ -190,7 +188,7 @@ function Toolbar({
                   setLocalSearchQuery("");
                   onSearchChange && onSearchChange("");
                 }}
-                className="absolute inset-y-0 right-0 pr-2 flex items-center text-white/60 hover:text-white transition-colors"
+                className="absolute inset-y-0 right-0 pr-2 flex items-center text-fg-secondary hover:text-fg transition-colors"
                 title="Clear search"
               >
                 <i className="ri-close-line text-sm"></i>

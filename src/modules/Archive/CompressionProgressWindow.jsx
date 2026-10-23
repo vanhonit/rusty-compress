@@ -75,17 +75,17 @@ const CompressionProgressWindow = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl border-2 border-purple-100 max-w-md w-full overflow-hidden">
+    <div className="min-h-screen bg-surface-secondary flex items-center justify-center p-4">
+      <div className="bg-surface rounded-xl shadow-window border border-separator max-w-md w-full overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4">
+        <div className="bg-surface-secondary px-6 py-4 border-b border-separator">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-              <i className="ri-archive-add-line text-2xl text-white"></i>
+            <div className="w-10 h-10 bg-surface-tertiary rounded-lg flex items-center justify-center">
+              <i className="ri-archive-add-line text-2xl text-accent"></i>
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white">Creating Archive</h1>
-              <p className="text-xs text-purple-100">Compressing files</p>
+              <h1 className="text-[13px] font-semibold text-fg">Creating Archive</h1>
+              <p className="text-xs text-accent">Compressing files</p>
             </div>
           </div>
         </div>
@@ -94,27 +94,27 @@ const CompressionProgressWindow = () => {
         <div className="p-6 space-y-6">
           {/* Error Display */}
           {error ? (
-            <div className="p-4 bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl">
+            <div className="p-4 bg-danger/10 border border-danger/40 rounded-xl">
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <i className="ri-close-circle-line text-xl text-red-600"></i>
+                <div className="w-8 h-8 bg-danger/10 rounded-full flex items-center justify-center flex-shrink-0">
+                  <i className="ri-close-circle-line text-xl text-danger"></i>
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-sm font-semibold text-red-800 mb-1">Error</h3>
-                  <p className="text-sm text-red-700">{error}</p>
+                  <h3 className="text-sm font-semibold text-danger mb-1">Error</h3>
+                  <p className="text-sm text-danger">{error}</p>
                 </div>
               </div>
             </div>
           ) : isComplete ? (
             /* Success State */
-            <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl">
+            <div className="p-4 bg-success/10 border border-success/40 rounded-xl">
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <i className="ri-check-line text-xl text-green-600"></i>
+                <div className="w-8 h-8 bg-success/10 rounded-full flex items-center justify-center flex-shrink-0">
+                  <i className="ri-check-line text-xl text-success"></i>
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-sm font-semibold text-green-800 mb-1">Complete</h3>
-                  <p className="text-sm text-green-700">Archive created successfully!</p>
+                  <h3 className="text-sm font-semibold text-success mb-1">Complete</h3>
+                  <p className="text-sm text-success">Archive created successfully!</p>
                 </div>
               </div>
             </div>
@@ -124,14 +124,14 @@ const CompressionProgressWindow = () => {
               {/* Progress Bar */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">Progress</span>
-                  <span className="text-sm font-bold text-purple-600">
+                  <span className="text-sm font-medium text-fg">Progress</span>
+                  <span className="text-sm font-bold text-accent">
                     {Math.round(progress.percentage)}%
                   </span>
                 </div>
-                <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+                <div className="w-full h-3 bg-surface-tertiary rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-purple-500 to-pink-600 rounded-full transition-all duration-300 ease-out"
+                    className="h-full bg-accent rounded-full transition-all duration-300 ease-out"
                     style={{ width: `${progress.percentage}%` }}
                   ></div>
                 </div>
@@ -139,10 +139,10 @@ const CompressionProgressWindow = () => {
 
               {/* Current File */}
               {progress.current_file && (
-                <div className="p-3 bg-purple-50 rounded-xl border border-purple-200">
+                <div className="p-3 bg-accent/10 rounded-xl border border-accent/40">
                   <div className="flex items-center gap-2">
-                    <i className="ri-file-line text-purple-600"></i>
-                    <span className="text-sm font-medium text-gray-800 truncate flex-1">
+                    <i className="ri-file-line text-accent"></i>
+                    <span className="text-sm font-medium text-fg truncate flex-1">
                       {progress.current_file}
                     </span>
                   </div>
@@ -151,26 +151,26 @@ const CompressionProgressWindow = () => {
 
               {/* Stats Grid */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
+                <div className="p-3 bg-accent/10 rounded-xl border border-accent/40">
                   <div className="flex items-center gap-2 mb-1">
-                    <i className="ri-file-list-3-line text-blue-600"></i>
-                    <span className="text-xs font-semibold text-gray-600 uppercase">
+                    <i className="ri-file-list-3-line text-accent"></i>
+                    <span className="text-xs font-semibold text-fg-secondary uppercase">
                       Files Processed
                     </span>
                   </div>
-                  <p className="text-lg font-bold text-blue-700">
+                  <p className="text-lg font-bold text-accent">
                     {progress.files_processed}
                   </p>
                 </div>
 
-                <div className="p-3 bg-pink-50 rounded-xl border border-pink-200">
+                <div className="p-3 bg-accent/10 rounded-xl border border-accent/40">
                   <div className="flex items-center gap-2 mb-1">
-                    <i className="ri-shrink-line text-pink-600"></i>
-                    <span className="text-xs font-semibold text-gray-600 uppercase">
+                    <i className="ri-shrink-line text-accent"></i>
+                    <span className="text-xs font-semibold text-fg-secondary uppercase">
                       Compression Ratio
                     </span>
                   </div>
-                  <p className="text-lg font-bold text-pink-700">
+                  <p className="text-lg font-bold text-accent">
                     {progress.compression_ratio > 0
                       ? `${progress.compression_ratio.toFixed(1)}%`
                       : 'N/A'}
@@ -181,9 +181,9 @@ const CompressionProgressWindow = () => {
               {/* Loading Animation */}
               <div className="flex items-center justify-center py-4">
                 <div className="relative">
-                  <div className="absolute inset-0 bg-purple-100 rounded-full animate-ping opacity-20"></div>
-                  <div className="relative w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full flex items-center justify-center shadow-lg">
-                    <i className="ri-refresh-line text-xl text-white animate-spin"></i>
+                  <div className="absolute inset-0 bg-accent/10 rounded-full opacity-20"></div>
+                  <div className="relative w-12 h-12 bg-accent/10 rounded-full flex items-center justify-center">
+                    <i className="ri-refresh-line text-xl text-accent animate-spin"></i>
                   </div>
                 </div>
               </div>
@@ -192,15 +192,15 @@ const CompressionProgressWindow = () => {
         </div>
 
         {/* Footer */}
-        <div className="bg-gray-50 border-t border-gray-200 px-6 py-4">
+        <div className="bg-surface-secondary border-t border-separator px-6 py-4">
           <div className="flex justify-center">
             {!isComplete && !error && (
-              <p className="text-xs text-gray-500 text-center">
+              <p className="text-xs text-fg-secondary text-center">
                 Compressing files... Please wait
               </p>
             )}
             {isComplete && (
-              <p className="text-xs text-gray-500 text-center">
+              <p className="text-xs text-fg-secondary text-center">
                 Closing automatically...
               </p>
             )}
